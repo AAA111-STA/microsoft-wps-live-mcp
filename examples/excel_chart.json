@@ -1,0 +1,12 @@
+[
+  {"action":"call","target":"document.Worksheets","member":"Item","args":[1],"as":"sheet","read_only":true},
+  {"action":"call","target":"sheet","member":"Range","args":["A1:B4"],"as":"data","read_only":true},
+  {"action":"set","target":"data","member":"Value2","value":[["Month","Amount"],["January",120],["February",180],["March",150]]},
+  {"action":"call","target":"sheet","member":"ChartObjects","args":[],"as":"charts","read_only":true},
+  {"action":"call","target":"charts","member":"Add","args":[260,30,500,300],"as":"chartObject"},
+  {"action":"get","target":"chartObject","member":"Chart","as":"chart"},
+  {"action":"set","target":"chart","member":"ChartType","value":51},
+  {"action":"call","target":"chart","member":"SetSourceData","args":[{"$ref":"data"}]},
+  {"action":"set","target":"chart","member":"HasTitle","value":true},
+  {"action":"set","target":"chart.ChartTitle","member":"Text","value":"Monthly overview"}
+]

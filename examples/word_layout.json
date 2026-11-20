@@ -1,0 +1,15 @@
+[
+  {"action":"set","target":"document.PageSetup","member":"TopMargin","value":72},
+  {"action":"set","target":"document.PageSetup","member":"BottomMargin","value":72},
+  {"action":"set","target":"document.PageSetup","member":"LeftMargin","value":72},
+  {"action":"set","target":"document.PageSetup","member":"RightMargin","value":72},
+  {"action":"call","target":"document","member":"Range","args":[0,0],"as":"start","read_only":true},
+  {"action":"call","target":"start","member":"InsertBefore","args":["Project notes\rPurpose\rWrite a clear explanation of the task and the expected result.\r"]},
+  {"action":"call","target":"document.Paragraphs","member":"Item","args":[1],"as":"title","read_only":true},
+  {"action":"set","target":"title.Range.Font","member":"Size","value":24},
+  {"action":"set","target":"title.Range.Font","member":"Bold","value":true},
+  {"action":"set","target":"title.Format","member":"SpaceAfter","value":16},
+  {"action":"call","target":"document.Paragraphs","member":"Item","args":[2],"as":"heading","read_only":true},
+  {"action":"set","target":"heading.Range.Font","member":"Size","value":16},
+  {"action":"set","target":"heading.Range.Font","member":"Bold","value":true}
+]

@@ -1,0 +1,29 @@
+[
+  {"label":"Create the headers","steps":[
+    {"action":"call","target":"document.Worksheets","member":"Item","args":[1],"as":"sheet","read_only":true},
+    {"action":"call","target":"sheet","member":"Range","args":["A1:B1"],"as":"headers","read_only":true},
+    {"action":"set","target":"headers","member":"Value2","value":[["Item","Amount"]]}
+  ],"focus":{"sheet":1,"address":"A1:B1"}},
+  {"label":"Enter the data","steps":[
+    {"action":"call","target":"sheet","member":"Range","args":["A2:B3"],"as":"data","read_only":true},
+    {"action":"set","target":"data","member":"Value2","value":[["Income",1200],["Cost",300]]}
+  ],"focus":{"sheet":1,"address":"A2:B3"}},
+  {"label":"Calculate the balance","steps":[
+    {"action":"call","target":"sheet","member":"Range","args":["A4:B4"],"as":"balance","read_only":true},
+    {"action":"set","target":"balance","member":"Formula","value":[["Balance","=B2-B3"]]}
+  ],"focus":{"sheet":1,"address":"A4:B4"}},
+  {"label":"Format the table","steps":[
+    {"action":"set","target":"headers.Font","member":"Bold","value":true},
+    {"action":"set","target":"headers.Interior","member":"Color","value":15853270},
+    {"action":"call","target":"headers.EntireColumn","member":"AutoFit","args":[]}
+  ],"focus":{"sheet":1,"address":"A1:B4"}},
+  {"label":"Build an editable chart","steps":[
+    {"action":"call","target":"sheet","member":"Range","args":["A1:B3"],"as":"source","read_only":true},
+    {"action":"call","target":"sheet","member":"ChartObjects","args":[],"as":"charts","read_only":true},
+    {"action":"call","target":"charts","member":"Add","args":[260,30,500,300],"as":"chartObject"},
+    {"action":"set","target":"chartObject.Chart","member":"ChartType","value":51},
+    {"action":"call","target":"chartObject.Chart","member":"SetSourceData","args":[{"$ref":"source"}]},
+    {"action":"set","target":"chartObject.Chart","member":"HasTitle","value":true},
+    {"action":"set","target":"chartObject.Chart.ChartTitle","member":"Text","value":"Income and cost"}
+  ],"focus":{"sheet":1,"address":"D1"}}
+]

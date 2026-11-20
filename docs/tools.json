@@ -1,0 +1,1600 @@
+{
+  "ttlMs": 0,
+  "cacheScope": "private",
+  "tools": [
+    {
+      "name": "office_status",
+      "description": "Detect desktop Office/WPS COM registrations and list open documents without starting apps.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object",
+        "title": "office_statusArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_list_open_documents",
+      "description": "List already-open Word, Excel, PPT documents, including untitled documents; returns document IDs.",
+      "inputSchema": {
+        "properties": {
+          "engine": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "microsoft",
+              "wps"
+            ],
+            "title": "Engine",
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "title": "office_list_open_documentsArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_open_document",
+      "description": "Attach to an existing document, or load a closed file in native Office/WPS. Never hides existing windows.\n\n        auto follows the product already editing this path; for closed files prefers Microsoft, then WPS.\n        Visible editing is the default for every task. Only use visible=False on an explicit background-work request.\n        Returns document_id for subsequent calls.\n        ",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "engine": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "microsoft",
+              "wps"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
+          "visible": {
+            "default": true,
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object",
+        "title": "office_open_documentArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_create_document",
+      "description": "Create and save a new .docx/.xlsx/.pptx using native Office/WPS. Never overwrites an existing file.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "engine": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "microsoft",
+              "wps"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
+          "visible": {
+            "default": true,
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object",
+        "title": "office_create_documentArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_show_document",
+      "description": "Show the real native editing window and navigate to the work in progress. No file content is changed.\n\n        Word focus={start:0,end:20} (native character offsets);\n        Excel focus={sheet:'Sheet1',address:'A1:D10'}; PPT focus={slide:2,shape:1} (shape optional).\n        Can make a previously hidden native document visible without rebuilding it. Returns observed live_view status.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "focus": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Focus"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_show_documentArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_live_steps",
+      "description": "Build or edit ANY Office task in named visible stages, saving each stage as the user watches.\n\n        stages=[{label:'Create title',steps:[...native get/set/call steps...],focus:{slide:1}}, ...].\n        Steps use office_api_batch syntax. Aliases carry across stages within this call.\n        Focus can address Word start/end offsets, Excel sheet/address, or PPT slide/shape.\n        pause_ms is 0..2000 ms between stages, default 450. Keep stages short and meaningful.\n        Emits standard MCP progress where supported. Stages are not transactions; stop on partial_error/display_error.\n        For long calls returning pending, query office_operation_status and do not replay the workflow.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "pause_ms": {
+            "default": 450,
+            "title": "Pause Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document",
+          "stages"
+        ],
+        "type": "object",
+        "title": "office_live_stepsArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_save_document",
+      "description": "Save the live document, including user edits, and verify disk output. Save As requires an unused absolute path.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "save_as": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Save As"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_save_documentArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_create_copy",
+      "description": "Save and produce an independent verified final copy, keeping the original document path unchanged.\n\n        path omitted creates a uniquely named sibling .copy-TIMESTAMP file. Never overwrites an existing file.\n        Use at the end of editing tasks and return the copy path to the user. Automatic recovery copies also update on every save.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_create_copyArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_close_document",
+      "description": "Save and close this document only. Never quits the app or discards user edits.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_close_documentArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_operation_status",
+      "description": "Retrieve the result of a pending/timed-out native operation. Do not replay modifications after timeout.",
+      "inputSchema": {
+        "properties": {
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id"
+        ],
+        "type": "object",
+        "title": "office_operation_statusArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_inspect_document",
+      "description": "Inventory native components in Word, Excel or PPT: tables, charts, shapes, notes, revisions, masters/animations, etc.\n\n        Unsupported native inventory properties are marked available=false individually.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_inspect_documentArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_export_pdf",
+      "description": "Export the current live Word/Excel/PPT document to a new PDF using its native application. Never overwrites output.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document",
+          "path"
+        ],
+        "type": "object",
+        "title": "office_export_pdfArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_api_describe",
+      "description": "Discover public native COM properties/methods and argument names from installed Office/WPS type information.\n\n        target: document, application, returned object_id, or dotted property path such as document.PageSetup.\n        Use office_api_batch to obtain indexed child objects and store their returned object_id.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "target": {
+            "default": "document",
+            "title": "Target",
+            "type": "string"
+          },
+          "search": {
+            "default": "",
+            "title": "Search",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_api_describeArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_api_constants",
+      "description": "Discover native enum values from the installed product's type libraries, including shared Office shape/arrow enums.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "search": {
+            "default": "",
+            "title": "Search",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_api_constantsArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_api_batch",
+      "description": "Compose ANY public native Office/WPS object-model operations, beyond the convenience tools.\n\n        Each step: action=get/set/call, target (default document), member, optional args array,\n        kwargs object, value for set, as alias. Example: call document.Slides.Add(1,12) with\n        {\"action\":\"call\",\"target\":\"document.Slides\",\"member\":\"Add\",\"args\":[1,12],\"as\":\"slide\"}.\n        Then target=\"slide.Shapes\", member=\"AddShape\", args=[1,40,40,200,80], as=\"box\";\n        set target=\"box.TextFrame.TextRange\", member=\"Text\", value=\"Data processing\".\n        Arguments can reference previous aliases or returned object IDs using {\"$ref\":\"box\"}.\n        Output COM objects become object_id references usable across calls in this document.\n        Indexed-property calls (Item, Range, etc.) can set read_only=true when genuinely read-only.\n        Batches stop at the first error, keep earlier live edits, and return partial_error with completed results.\n        Successful modifying batches automatically save, including existing user edits.\n        Any installed native component is addressable; unsupported members fail explicitly.\n        Uses native COM, not Python eval/exec. This grants the same desktop access as the native API.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "document",
+          "steps"
+        ],
+        "type": "object",
+        "title": "office_api_batchArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_read",
+      "description": "Read current live Word/WPS paragraphs, table count, and native character offsets. Paragraphs are 1-based.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "start": {
+            "default": 1,
+            "title": "Start",
+            "type": "integer"
+          },
+          "count": {
+            "default": 100,
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_word_readArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_find",
+      "description": "Find native Word/WPS text and return exact start/end offsets and context. Supports native Word wildcard syntax.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "match_case": {
+            "default": false,
+            "title": "Match Case",
+            "type": "boolean"
+          },
+          "whole_word": {
+            "default": false,
+            "title": "Whole Word",
+            "type": "boolean"
+          },
+          "wildcards": {
+            "default": false,
+            "title": "Wildcards",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document",
+          "text"
+        ],
+        "type": "object",
+        "title": "office_word_findArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_snapshot",
+      "description": "Take an in-memory paragraph snapshot, check snapshot status, or compare current live text with the snapshot.\n\n        diff reports inserted/deleted/replaced text blocks and does not update the baseline; formatting is not compared.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "action": {
+            "default": "take",
+            "enum": [
+              "take",
+              "status",
+              "diff"
+            ],
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_word_snapshotArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_comments",
+      "description": "Read or edit native comments. Add uses start/end character offsets; other edits use 1-based comment index.\n\n        Threaded replies and resolution depend on installed product/version. list is read-only and never saves.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "action": {
+            "default": "list",
+            "enum": [
+              "list",
+              "add",
+              "reply",
+              "resolve",
+              "reopen",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Index"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_word_commentsArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_revisions",
+      "description": "List native tracked changes, explicitly enable/disable tracking, or accept/reject changes by indices/author.\n\n        indices omitted means all matching changes; all indices are 1-based. list is read-only and never saves.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "action": {
+            "default": "list",
+            "enum": [
+              "list",
+              "track",
+              "accept",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Enabled"
+          },
+          "indices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Indices"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Author"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_word_revisionsArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_insert_component",
+      "description": "Insert native Word components. Other component types remain accessible via office_api_batch.\n\n        options: image={path,width?,height?} (points); equation={text} (UnicodeMath);\n        footnote/endnote={text}; bookmark={name}; field={code}; hyperlink={address,text?,subaddress?};\n        section_break={type:2}; toc={upper_level:1,lower_level:3}; page_break={};\n        cross_reference={reference_type:2,reference_kind:-1,reference_item:'BookmarkName',as_hyperlink:true}.\n        Query native constants for other reference types/kinds; caption reference types use the actual localized label.\n        position: start/end or a native character offset. Native feature support varies by product/version.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "component": {
+            "enum": [
+              "image",
+              "equation",
+              "footnote",
+              "endnote",
+              "bookmark",
+              "field",
+              "hyperlink",
+              "page_break",
+              "section_break",
+              "toc",
+              "cross_reference"
+            ],
+            "title": "Component",
+            "type": "string"
+          },
+          "options": {
+            "additionalProperties": true,
+            "title": "Options",
+            "type": "object"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "default": "end",
+            "title": "Position"
+          }
+        },
+        "required": [
+          "document",
+          "component",
+          "options"
+        ],
+        "type": "object",
+        "title": "office_word_insert_componentArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_undo",
+      "description": "Undo native Word/WPS undo entries. An entry is not guaranteed to equal one MCP call, especially in batches.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "times": {
+            "default": 1,
+            "title": "Times",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_word_undoArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_insert_text",
+      "description": "Insert text without rebuilding the document. position is start, end, or a native 0-based character offset.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "default": "end",
+            "title": "Position"
+          }
+        },
+        "required": [
+          "document",
+          "text"
+        ],
+        "type": "object",
+        "title": "office_word_insert_textArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_replace_text",
+      "description": "Use native Find/Replace in the main document body; retains unrelated fields and formatting.\n\n        Search and replacement each have a native 255-character limit. Native Word control codes are supported.\n        ",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "search": {
+            "title": "Search",
+            "type": "string"
+          },
+          "replacement": {
+            "title": "Replacement",
+            "type": "string"
+          },
+          "match_case": {
+            "default": false,
+            "title": "Match Case",
+            "type": "boolean"
+          },
+          "whole_word": {
+            "default": false,
+            "title": "Whole Word",
+            "type": "boolean"
+          },
+          "replace_all": {
+            "default": true,
+            "title": "Replace All",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "document",
+          "search",
+          "replacement"
+        ],
+        "type": "object",
+        "title": "office_word_replace_textArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_format_text",
+      "description": "Format a native Word character range; get start/end offsets from office_word_read. Colors use #RRGGBB.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "font_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Font Name"
+          },
+          "font_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Font Size"
+          },
+          "bold": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bold"
+          },
+          "italic": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Italic"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          }
+        },
+        "required": [
+          "document",
+          "start",
+          "end"
+        ],
+        "type": "object",
+        "title": "office_word_format_textArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_word_add_table",
+      "description": "Insert a rectangular native Word table at end or a character offset. Does not rebuild other document content.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "default": "end",
+            "title": "Position"
+          }
+        },
+        "required": [
+          "document",
+          "values"
+        ],
+        "type": "object",
+        "title": "office_word_add_tableArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_excel_read_range",
+      "description": "Read current native Excel/WPS values and formulas. sheet is its actual name or 1-based index; address is A1:B3.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document",
+          "sheet",
+          "address"
+        ],
+        "type": "object",
+        "title": "office_excel_read_rangeArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_excel_write_range",
+      "description": "Write an exact-sized 2D array into a native range. Strings are literal by default; set formulas=True for formulas.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "formulas": {
+            "default": false,
+            "title": "Formulas",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "document",
+          "sheet",
+          "address",
+          "values"
+        ],
+        "type": "object",
+        "title": "office_excel_write_rangeArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_excel_sheets",
+      "description": "List, add, or rename worksheets. add uses name; rename uses name and new_name. No worksheet deletion.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "action": {
+            "default": "list",
+            "enum": [
+              "list",
+              "add",
+              "rename"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "new_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "New Name"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_excel_sheetsArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_excel_format_range",
+      "description": "Format range fonts, fill, number format, and column width. Colors use #RRGGBB.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "font_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Font Name"
+          },
+          "font_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Font Size"
+          },
+          "bold": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bold"
+          },
+          "italic": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Italic"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fill"
+          },
+          "number_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Number Format"
+          },
+          "column_width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column Width"
+          }
+        },
+        "required": [
+          "document",
+          "sheet",
+          "address"
+        ],
+        "type": "object",
+        "title": "office_excel_format_rangeArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_ppt_read",
+      "description": "Inspect live PowerPoint/WPS slides and text shapes. Slide and shape indices are 1-based, unlike the old web bridge.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "start": {
+            "default": 1,
+            "title": "Start",
+            "type": "integer"
+          },
+          "count": {
+            "default": 20,
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_ppt_readArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_ppt_set_text",
+      "description": "Replace text in an existing text shape. Read shape indices first; mixed character formatting may change.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "slide": {
+            "title": "Slide",
+            "type": "integer"
+          },
+          "shape": {
+            "title": "Shape",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document",
+          "slide",
+          "shape",
+          "text"
+        ],
+        "type": "object",
+        "title": "office_ppt_set_textArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_ppt_add_slide",
+      "description": "Add a blank-layout slide with optional title/body textboxes. position is 1-based, omitted means append.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Position"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object",
+        "title": "office_ppt_add_slideArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_ppt_add_textbox",
+      "description": "Add a native editable textbox to a slide. Position and size are in points (72 points per inch).",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "slide": {
+            "title": "Slide",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "left": {
+            "default": 36,
+            "title": "Left",
+            "type": "number"
+          },
+          "top": {
+            "default": 100,
+            "title": "Top",
+            "type": "number"
+          },
+          "width": {
+            "default": 400,
+            "title": "Width",
+            "type": "number"
+          },
+          "height": {
+            "default": 100,
+            "title": "Height",
+            "type": "number"
+          }
+        },
+        "required": [
+          "document",
+          "slide",
+          "text"
+        ],
+        "type": "object",
+        "title": "office_ppt_add_textboxArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "office_ppt_format_text",
+      "description": "Format a text shape in native PowerPoint/WPS; colors use #RRGGBB. Inspect slide/shape indices first.",
+      "inputSchema": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "slide": {
+            "title": "Slide",
+            "type": "integer"
+          },
+          "shape": {
+            "title": "Shape",
+            "type": "integer"
+          },
+          "font_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Font Name"
+          },
+          "font_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Font Size"
+          },
+          "bold": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bold"
+          },
+          "italic": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Italic"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          }
+        },
+        "required": [
+          "document",
+          "slide",
+          "shape"
+        ],
+        "type": "object",
+        "title": "office_ppt_format_textArguments"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    }
+  ],
+  "resultType": "complete"
+}

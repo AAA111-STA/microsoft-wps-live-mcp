@@ -1,0 +1,26 @@
+[
+  {"label":"Write document title","steps":[
+    {"action":"call","target":"document.Content","member":"InsertBefore","args":["Project notes\r"]}
+  ],"focus":{"start":0,"end":13}},
+  {"label":"Format the title","steps":[
+    {"action":"call","target":"document.Paragraphs","member":"Item","args":[1],"as":"title","read_only":true},
+    {"action":"set","target":"title.Range.Font","member":"Size","value":24},
+    {"action":"set","target":"title.Range.Font","member":"Bold","value":true}
+  ],"focus":{"start":0,"end":13}},
+  {"label":"Write the body","steps":[
+    {"action":"call","target":"document.Content","member":"InsertAfter","args":["Purpose\rDescribe the task, inputs and expected results.\rNext steps\rReview the output and keep an independent copy.\r"]}
+  ]},
+  {"label":"Add an editable tracking table","steps":[
+    {"action":"get","target":"document","member":"Content","as":"endRange"},
+    {"action":"call","target":"endRange","member":"Collapse","args":[0],"read_only":true},
+    {"action":"call","target":"document.Tables","member":"Add","args":[{"$ref":"endRange"},2,2],"as":"table"},
+    {"action":"call","target":"table","member":"Cell","args":[1,1],"as":"first","read_only":true},
+    {"action":"set","target":"first.Range","member":"Text","value":"Item"},
+    {"action":"call","target":"table","member":"Cell","args":[1,2],"as":"second","read_only":true},
+    {"action":"set","target":"second.Range","member":"Text","value":"Status"},
+    {"action":"call","target":"table","member":"Cell","args":[2,1],"as":"third","read_only":true},
+    {"action":"set","target":"third.Range","member":"Text","value":"Review"},
+    {"action":"call","target":"table","member":"Cell","args":[2,2],"as":"fourth","read_only":true},
+    {"action":"set","target":"fourth.Range","member":"Text","value":"Pending"}
+  ]}
+]

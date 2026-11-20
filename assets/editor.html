@@ -1,0 +1,16 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Office 实时编辑器</title>
+<style>html,body{height:100%;margin:0;font:14px system-ui;background:#f8fafc;color:#172033}body{display:flex;flex-direction:column}header{display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid #d6dce5;background:#fff}button{padding:7px 14px;border:1px solid #bcc8d6;border-radius:6px;background:#eff6ff;color:#143d77;cursor:pointer}#name{font-weight:600}#state{font-size:12px;margin-left:auto}#editor{flex:1;min-height:0}#error{padding:24px;color:#a32222;white-space:pre-wrap}</style>
+<header><span id="name">Office 实时编辑器</span><button id="save">保存到原文件</button><span id="state">正在连接…</span></header><div id="error" hidden></div><div id="editor"></div>
+<script src="__DOCS__/web-apps/apps/api/documents/api.js"></script><script>
+const session='__SESSION__',token=new URLSearchParams(location.hash.slice(1)).get('token')||sessionStorage.getItem('office:'+session);if(token)sessionStorage.setItem('office:'+session,token);history.replaceState(null,'',location.pathname);let editor;
+const label=document.getElementById('state'),err=document.getElementById('error');
+let dirty=false,pendingSave=null,saveConfirmed=false;
+async function api(action,body){const r=await fetch('/api/session/'+session+'/'+action,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||r.status);return d}
+async function update(){try{const s=await api('status');document.getElementById('name').textContent=s.title;const online=Date.now()/1000-(s.bridge.time||0)<10;const save=s.save||{};
+// Modified-state events are transitions, not per-keystroke revisions. Keep dirty
+// conservative: confirmation covers the requested snapshot, never later edits.
+if(pendingSave&&save.state==='saved'&&save.generation>=pendingSave.generation){saveConfirmed=true;pendingSave=null;}
+label.textContent=save.state==='conflict'?'外部文件已修改：已暂停写回':save.state==='error'?'保存失败：'+save.error:pendingSave?'正在等待原文件写入确认…':saveConfirmed?'保存版本已写入；继续编辑后请再次保存':dirty?'有修改：请点击上方“保存到原文件”':s.editor.state==='explicit_save_required'?'请点击上方“保存到原文件”':save.state==='saved'?'上次保存版本已写入 · '+(online?'智能体已连接':'智能体未连接'):(online?'智能体已连接 · 尚未保存':'等待编辑器连接');}catch(e){label.textContent=e.message}}
+document.getElementById('save').onclick=async()=>{label.textContent='正在保存…';saveConfirmed=false;try{const r=await api('save',{});if(r.error&&r.error!==4)throw Error('编辑器返回 '+r.error);if(!r.error)pendingSave={generation:r.generation};setTimeout(update,1500)}catch(e){label.textContent=e.message}};
+(async()=>{try{if(!token)throw Error('缺少会话令牌，请使用 open 命令返回的完整编辑链接');const config=await api('config');config.events={onDocumentReady:()=>{api('ready',{});update()},onDocumentStateChange:e=>{if(e.data){dirty=true;saveConfirmed=false;update();}},onError:e=>{err.hidden=false;err.textContent='编辑器错误：'+JSON.stringify(e.data)}};editor=new DocsAPI.DocEditor('editor',config);setInterval(update,1500)}catch(e){err.hidden=false;err.textContent=e.message;label.textContent='连接失败'}})();
+</script></html>
