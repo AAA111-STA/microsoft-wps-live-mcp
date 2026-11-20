@@ -41,6 +41,10 @@ class LiveView:
                     return win32gui.GetAncestor(hwnd, 2) or hwnd
             except Exception:
                 pass
+        if record is not None and getattr(record, "kind", None) == "ppt":
+            h = win32gui.FindWindow("PPTFrameClass", None)
+            if h and win32gui.IsWindow(h):
+                return h
         if record is not None:
             # Some PowerPoint/WPS type libraries expose HWND but reject its
             # invocation. A unique matching top-level document caption is a
@@ -147,6 +151,12 @@ class LiveView:
                     left, top, right, bottom = win32gui.GetWindowRect(hwnd)
                     if right - left < 800 or bottom - top < 500:
                         win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+                    try:
+                        import ctypes
+                        ctypes.windll.user32.ShowWindow(hwnd, win32con.SW_SHOW)
+                        ctypes.windll.user32.SwitchToThisWindow(hwnd, True)
+                    except Exception:
+                        pass
                     try:
                         win32gui.SetForegroundWindow(hwnd)
                     except Exception:
