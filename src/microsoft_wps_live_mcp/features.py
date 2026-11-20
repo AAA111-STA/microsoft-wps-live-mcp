@@ -65,7 +65,10 @@ class SuiteFeatures:
         elif r.kind == "excel":
             r.doc.ExportAsFixedFormat(0, str(path))
         else:
-            r.doc.ExportAsFixedFormat(str(path), 2)
+            try:
+                r.doc.SaveAs(str(path.resolve()), 32)
+            except Exception:
+                r.doc.ExportAsFixedFormat(str(path.resolve()), 2)
         if not path.is_file():
             raise fail("The native application did not produce a PDF file.")
         with path.open("rb") as stream:
