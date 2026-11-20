@@ -283,6 +283,10 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         result = []
         warnings = []
         seen = set()
+        # (vendor, kind) pairs whose running application was successfully
+        # attached and whose document collection Count read back via COM.
+        # This is real automation evidence, not just registry registration.
+        reachable = set()
         for kind in COLLECTIONS:
             for vendor, app in self._apps(kind):
                 if engine != "auto" and vendor != engine:
@@ -293,6 +297,7 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
                 except Exception as exc:
                     warnings.append({"engine": vendor, "kind": kind, "error": str(exc)})
                     continue
+                reachable.add((vendor, kind))
                 for index in range(1, count + 1):
                     prior_ids = set(self.documents)
                     try:
@@ -308,13 +313,167 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
                         for identifier in set(self.documents) - prior_ids:
                             self.documents.pop(identifier, None)
                         warnings.append({"engine": vendor, "kind": kind, "index": index, "error": str(exc)})
-        return {"documents": result, "discovery_warnings": warnings}
+        return {"documents": result, "discovery_warnings": warnings,
+                "reachable_engines": sorted(f"{v}/{k}" for v, k in reachable)}
 
     def status(self):
         result = capabilities()
         result["data_dir"] = str(self.data_dir)
         result.update(self.list_open())
+        self._annotate_connection(result)
         return result
+
+    def _annotate_connection(self, result):
+        """Mark each engine/kind with a real COM connectivity verdict.
+
+        Non-intrusive: reflects only what list_open already observed by
+        attaching to running applications. No application is started here.
+        Use the --probe command (or probe()) to launch-and-verify closed apps.
+        """
+        reachable = {tuple(pair.split("/", 1)) for pair in result.get("reachable_engines", [])}
+        docs = result.get("documents", [])
+        warnings = result.get("discovery_warnings", [])
+        warn_by = {}
+        for w in warnings:
+            key = (w.get("engine"), w.get("kind"))
+            if key[0] is not None:
+                warn_by.setdefault(key, []).append(w.get("error", ""))
+        engines = result.get("engines", {})
+        for vendor, kinds in engines.items():
+            for kind, info in kinds.items():
+                if not info.get("registered"):
+                    info["connection"] = "unavailable"
+                    continue
+                if (vendor, kind) in reachable:
+                    info["connection"] = "verified_running"
+                elif (vendor, kind) in warn_by:
+                    info["connection"] = "error"
+                    info["connection_error"] = "; ".join(warn_by[(vendor, kind)])[:500]
+                else:
+                    info["connection"] = "registered_not_running"
+        result["note"] = (
+            "connection=verified_running: a running app was attached and its document collection Count read via COM "
+            "(real automation proven). connection=registered_not_running: ProgID is registered but no instance is "
+            "running; status never starts apps. connection=error: attach failed. "
+            "Run `--probe` to launch-and-verify closed apps. Registration alone is not a connection test."
+        )
+
+    def probe(self, engine="auto", kind=None):
+        """Verify COM automation for every registered engine/kind.
+
+        Attaches to already-running instances without launching. For a kind
+        with no running instance, launches the registered automation server,
+        reads identifying properties, and quits only the instance this probe
+        started. Pre-existing user applications are never touched or quit.
+        """
+        self.check_engine(engine)
+        if kind is not None and kind not in COLLECTIONS:
+            raise OfficeError("kind must be one of: " + ", ".join(COLLECTIONS))
+        engines = {}
+        quit_warnings = []
+        for vendor, kinds in PROGIDS.items():
+            if engine != "auto" and vendor != engine:
+                continue
+            engines[vendor] = {}
+            for k, progids in kinds.items():
+                if kind is not None and k != kind:
+                    continue
+                entry, warn = self._probe_one(vendor, k, progids)
+                engines[vendor][k] = entry
+                quit_warnings.extend(warn)
+        # Release any remaining COM wrappers promptly so launched apps that were
+        # Quit can actually exit, instead of lingering on held IDispatch refs.
+        import gc
+        gc.collect()
+        return {
+            "platform": sys.platform,
+            "engines": engines,
+            "probe_quit_warnings": quit_warnings,
+            "note": ("--probe verifies COM by attaching to running apps or launching registered ones; "
+                     "only instances started by this probe are quit. Pre-existing apps are left untouched. "
+                     "Launched apps are hidden (Visible=False); Office click-to-run may take a few seconds "
+                     "to finalize process exit after Quit."),
+        }
+
+    def _probe_one(self, vendor, kind, progids):
+        registered_progids = [p for p in progids if registration(p)]
+        entry = {"registered": bool(registered_progids), "progids": list(progids)}
+        quit_warnings = []
+        if not registered_progids:
+            entry["connection"] = "unavailable"
+            return entry, quit_warnings
+        # Prefer attaching to a running instance; never launch a duplicate.
+        try:
+            running = next((a for v, a in self._apps(kind) if v == vendor), None)
+        except Exception:
+            running = None
+        if running is not None:
+            entry.update(self._probe_read(running, kind))
+            entry["running"] = True
+            entry["started_by_probe"] = False
+            entry["connection"] = "verified_running"
+            return entry, quit_warnings
+        # No running instance; launch each registered ProgID until one connects.
+        attempts = []
+        for progid in registered_progids:
+            try:
+                app = dispatch(retry_busy(lambda: self.com.CoCreateInstanceEx(
+                    progid, None, self.com.CLSCTX_SERVER, None, (self.com.IID_IDispatch,))[0]))
+            except Exception as exc:
+                attempts.append({"progid": progid, "launched": False, "error": str(exc)[:300]})
+                continue
+            # Word/PowerPoint COM servers default to visible. Hide immediately so
+            # a probe never flashes a window at the user.
+            try:
+                app.Visible = False
+            except Exception:
+                pass
+            actual = vendor_of(app, vendor)
+            if actual != vendor:
+                attempts.append({"progid": progid, "launched": True, "vendor_mismatch": actual})
+                self._quit_launched(app, vendor, kind, progid, quit_warnings)
+                del app
+                continue
+            entry.update(self._probe_read(app, kind))
+            entry["running"] = False
+            entry["started_by_probe"] = True
+            entry["launched_progid"] = progid
+            entry["connection"] = "verified_launched"
+            entry["launch_attempts"] = attempts
+            # Quit now, while the only COM reference is this local variable;
+            # holding it across the rest of probe() keeps the app process alive.
+            self._quit_launched(app, vendor, kind, progid, quit_warnings)
+            del app
+            return entry, quit_warnings
+        entry["launch_attempts"] = attempts
+        entry["connection"] = "launch_failed"
+        return entry, quit_warnings
+
+    @staticmethod
+    def _quit_launched(app, vendor, kind, progid, quit_warnings):
+        try:
+            try:
+                app.DisplayAlerts = False
+            except Exception:
+                pass
+            app.Quit()
+        except Exception as exc:
+            quit_warnings.append({"engine": vendor, "kind": kind, "progid": progid,
+                                  "quit_error": str(exc)[:300]})
+
+    @staticmethod
+    def _probe_read(app, kind):
+        info = {}
+        for prop in ("Name", "Version", "Build"):
+            try:
+                info[prop.lower()] = str(getattr(app, prop))
+            except Exception:
+                continue
+        try:
+            info["document_count"] = int(getattr(app, COLLECTIONS[kind]).Count)
+        except Exception as exc:
+            info["document_count_error"] = str(exc)[:200]
+        return info
 
     def _validate_path(self, filename, exists=True):
         path = Path(filename).expanduser()

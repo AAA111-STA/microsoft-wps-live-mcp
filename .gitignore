@@ -5,6 +5,7 @@
 /data/
 /logs/
 /config/
+/.workbuddy/
 /.env
 /.env.*
 !/.env.example

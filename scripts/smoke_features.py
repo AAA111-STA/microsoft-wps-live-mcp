@@ -16,6 +16,23 @@ from microsoft_wps_live_mcp.native import NativeOffice, file_hash
 from microsoft_wps_live_mcp.worker import OfficeWorker
 
 
+def stable_hash(path, timeout_s: float = 5.0):
+    """Hash a file the live application may briefly lock while saving.
+
+    Office apps take an exclusive lock for a moment on each save. Polling the
+    hash while the idle observer autosaves races with that lock; wait it out
+    instead of mistaking a transient PermissionError for a broken save.
+    """
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            return file_hash(Path(path))
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
+
+
 class ManualInputProbe(NativeOffice):
     def simulate_manual_input(self, document):
         # Direct native buffer mutation, deliberately bypassing all MCP edit/save
@@ -78,18 +95,18 @@ async def run(engine, root):
         await worker.call("export_pdf", document, str(pdf))
         results.append({"feature": "pdf_export", "passed": True})
 
-        before = file_hash(path)
+        before = stable_hash(path)
         await worker.call("simulate_manual_input", document)
         for _ in range(15):
             await asyncio.sleep(0.2)
-            if file_hash(path) != before:
+            if stable_hash(path) != before:
                 break
-        assert file_hash(path) != before, "Observer did not save manual input"
+        assert stable_hash(path) != before, "Observer did not save manual input"
         info = await worker.call("inspect_document", document)
-        assert file_hash(Path(info["recovery_copy"])) == file_hash(path), info
+        assert stable_hash(info["recovery_copy"]) == stable_hash(path), info
         results.append({"feature": "manual_edit_autosave_and_recovery_copy", "passed": True})
         copied = await worker.call("create_copy", document)
-        assert file_hash(Path(copied["copy_path"])) == file_hash(path)
+        assert stable_hash(copied["copy_path"]) == stable_hash(path)
         assert Path(copied["path"]).resolve() == path.resolve()
         results.append({"feature": "independent_final_copy", "passed": True})
         # Even an explicit staging flag on the public worker cannot bypass autosave.
@@ -102,17 +119,17 @@ async def run(engine, root):
             other_path = root / (engine + "-autosave-" + kind + suffix)
             other = await worker.call("create", str(other_path), engine)
             document = other["document_id"]
-            before = file_hash(other_path)
+            before = stable_hash(other_path)
             await worker.call("simulate_manual_input", document)
             for _ in range(20):
                 await asyncio.sleep(0.2)
-                if file_hash(other_path) != before:
+                if stable_hash(other_path) != before:
                     break
-            assert file_hash(other_path) != before, kind + " observer failed to save"
+            assert stable_hash(other_path) != before, kind + " observer failed to save"
             info = await worker.call("inspect_document", document)
-            assert info["saved"] and file_hash(Path(info["recovery_copy"])) == file_hash(other_path), info
+            assert info["saved"] and stable_hash(info["recovery_copy"]) == stable_hash(other_path), info
             copied = await worker.call("create_copy", document)
-            assert file_hash(Path(copied["copy_path"])) == file_hash(other_path)
+            assert stable_hash(copied["copy_path"]) == stable_hash(other_path)
             results.append({"feature": kind + "_manual_autosave_recovery_and_final_copy", "passed": True})
             await worker.call("close", document)
             document = None

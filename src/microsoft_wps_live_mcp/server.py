@@ -375,6 +375,12 @@ def main():
     parser = argparse.ArgumentParser(description="Live MCP tools for native Microsoft Office and WPS Office (Windows).")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--doctor", action="store_true", help="Print compatibility and open-document status; no apps are started")
+    parser.add_argument("--probe", action="store_true",
+                        help="Launch each registered closed Office/WPS app, verify COM automation, and quit only instances started by this probe")
+    parser.add_argument("--engine", choices=("auto", "microsoft", "wps"), default="auto",
+                        help="With --probe: limit to one vendor (default: both)")
+    parser.add_argument("--kind", choices=("word", "excel", "ppt"), default=None,
+                        help="With --probe: limit to one document kind")
     parser.add_argument("--config", choices=PROFILES, help="Print installation-specific MCP client configuration")
     parser.add_argument("--write-configs", type=Path, help="Generate all supported client profiles in this local directory")
     parser.add_argument("--data-dir", type=Path, help="Local backup location (default: user application data directory)")
@@ -389,6 +395,13 @@ def main():
     atexit.register(worker.stop)
     if args.doctor:
         result = asyncio.run(worker.call("status")) if sys.platform in ("win32", "darwin") else capabilities()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if args.probe:
+        if sys.platform not in ("win32", "darwin"):
+            print(json.dumps({"platform": sys.platform, "error": "probe requires Windows or macOS with desktop Office/WPS"}, ensure_ascii=False))
+            return
+        result = asyncio.run(worker.call("probe", args.engine, args.kind))
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     build_server(worker).run(transport="stdio")
