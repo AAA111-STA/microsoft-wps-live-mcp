@@ -279,12 +279,15 @@ class LiveView:
                 break
         return None
 
-    def live_steps(self, document, stages, pause_ms=450, _on_progress=None, _cancel_event=None):
+    def live_steps(self, document, stages, pause_ms=450, _on_progress=None, _cancel_event=None, step_pause_ms=None):
         from .object_model import validate_steps
         if not isinstance(stages, list) or not 1 <= len(stages) <= 100:
             raise live_error("stages must contain 1 to 100 named stages.")
         if isinstance(pause_ms, bool) or not isinstance(pause_ms, int) or not 0 <= pause_ms <= 2000:
             raise live_error("pause_ms must be an integer between 0 and 2000.")
+        if step_pause_ms is not None and (isinstance(step_pause_ms, bool) or not isinstance(step_pause_ms, int)
+                                          or not 0 <= step_pause_ms <= 1000):
+            raise live_error("step_pause_ms must be an integer between 0 and 1000, or omitted for the per-step default.")
         for stage in stages:
             if (not isinstance(stage, dict) or set(stage) - {"label", "steps", "focus"}
                     or not isinstance(stage.get("label"), str) or not stage["label"].strip()
@@ -301,7 +304,8 @@ class LiveView:
                 return {**self._info(record), "state": "cancelled", "completed_stages": len(completed),
                         "stages": completed, "disk_saved": bool(record.doc.Saved)}
             try:
-                result = self.api_batch(record.id, stage["steps"], True, _aliases=aliases)
+                batch_kwargs = {} if step_pause_ms is None else {"_step_pause_ms": step_pause_ms}
+                result = self.api_batch(record.id, stage["steps"], True, _aliases=aliases, **batch_kwargs)
             except Exception as exc:
                 # Native busy/save/preparation failures may escape api_batch.
                 # Preserve confirmed prior stages without making more COM reads

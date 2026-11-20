@@ -54,7 +54,7 @@ async def run(engine, kind, folder, keep_open=False, installed=False, mode="lega
     events = []
     async with Client(parameters, read_timeout_seconds=120, mode=mode) as client:
         listed = await client.list_tools()
-        assert len(listed.tools) == 35
+        assert len(listed.tools) == 37
         info = unpack(await client.call_tool("office_create_document", {"path": str(path), "engine": engine}))
         document = info["document_id"]
         success = False

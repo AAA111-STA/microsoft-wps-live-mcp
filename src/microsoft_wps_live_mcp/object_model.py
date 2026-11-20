@@ -176,7 +176,7 @@ class ObjectModel:
         return {"engine": record.engine, "kind": record.kind, "constants": result[:limit],
                 "total_matching_constants": len(result), "truncated": len(result) > limit}
 
-    def api_batch(self, document, steps, save=True, _aliases=None):
+    def api_batch(self, document, steps, save=True, _aliases=None, _step_pause_ms=None):
         from .native import file_hash
         from pathlib import Path
         mutating = validate_steps(steps)
@@ -208,7 +208,7 @@ class ObjectModel:
                     focus = self._focus_for_object(record, value) if hasattr(value, "_oleobj_") else None
                     if focus is None:
                         focus = self._focus_for_object(record, target)
-                    view = self.live_checkpoint(record, focus)
+                    view = self.live_checkpoint(record, focus, pause_ms=_step_pause_ms)
                     if view.get("state") == "unavailable":
                         raise error("Live display became unavailable; the batch stopped after this native step.")
             except Exception as exc:

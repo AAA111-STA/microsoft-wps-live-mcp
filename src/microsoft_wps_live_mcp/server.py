@@ -28,7 +28,12 @@ Create/open visibly; only use visible=False when the user explicitly requests ba
 Plan short meaningful stages (a paragraph/section, data block, chart, shape group or layout change).
 Use office_live_steps for a multi-stage object-model workflow; it paints and saves each named stage.
 For convenience tools, use several small calls rather than a single opaque whole-document replacement.
+For PowerPoint boxes prefer office_ppt_add_box (auto-contrasts text against the fill) and for arrows
+office_ppt_add_connector (sets arrowheads on Shape.Line); tune per-shape rhythm with step_pause_ms.
 office_show_document navigates the native window to the exact paragraph, range or slide being edited.
+Immediately after office_create_document or office_open_document returns with visible=true, call
+office_show_document once to raise the real window BEFORE planning long content, so the user sees
+the document at once instead of discovering it later behind other windows.
 Do not disable screen updating, hide the document, silently switch to offline file generation, or close
 the completed document unless requested. Keep the native output visible and editable for the user.
 If live_view reports unavailable or focus_error, inspect and fix display before claiming visible success.
@@ -103,13 +108,15 @@ def build_server(worker=None):
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
     async def office_live_steps(document: str, stages: list[dict[str, Any]], ctx: Context,
-                                 pause_ms: int = 450) -> dict:
+                                 pause_ms: int = 450, step_pause_ms: int | None = None) -> dict:
         """Build or edit ANY Office task in named visible stages, saving each stage as the user watches.
 
         stages=[{label:'Create title',steps:[...native get/set/call steps...],focus:{slide:1}}, ...].
         Steps use office_api_batch syntax. Aliases carry across stages within this call.
         Focus can address Word start/end offsets, Excel sheet/address, or PPT slide/shape.
         pause_ms is 0..2000 ms between stages, default 450. Keep stages short and meaningful.
+        step_pause_ms (0..1000, optional) paces each visible step within a stage so shapes appear
+        one by one with a readable rhythm; omitted uses the per-step default (~180 ms).
         Emits standard MCP progress where supported. Stages are not transactions; stop on partial_error/display_error.
         For long calls returning pending, query office_operation_status and do not replay the workflow.
         """
@@ -123,7 +130,8 @@ def build_server(worker=None):
                 loop.call_soon_threadsafe(events.put_nowait, event)
 
         running = asyncio.create_task(worker.call("live_steps", document, stages, pause_ms,
-                                                  _on_progress=on_progress, _cancel_event=cancelled))
+                                                  _on_progress=on_progress, _cancel_event=cancelled,
+                                                  step_pause_ms=step_pause_ms))
         waiting = None
         try:
             while not running.done():
@@ -367,6 +375,31 @@ def build_server(worker=None):
                                      italic: bool | None = None, color: str | None = None) -> dict:
         """Format a text shape in native PowerPoint/WPS; colors use #RRGGBB. Inspect slide/shape indices first."""
         return await worker.call("ppt_format", document, slide, shape, font_name, font_size, bold, italic, color, True)
+
+    @server.tool(annotations=edit)
+    async def office_ppt_add_box(document: str, text: str, left: float, top: float, width: float, height: float,
+                                  fill: str | None = None, font_size: float | None = None,
+                                  font_color: str | None = None, rounded: bool = True, slide: int = 1) -> dict:
+        """Add a native box with text and an explicit fill; coordinates and sizes are points.
+
+        fill and font_color use #RRGGBB. When fill is supplied and font_color is omitted, the
+        font color is chosen automatically for contrast, avoiding PowerPoint's invisible
+        white-on-light text. Prefer this over raw AddShape for labeled boxes.
+        """
+        return await worker.call("ppt_add_box", document, text, left, top, width, height,
+                                 fill, font_size, font_color, rounded, slide, True)
+
+    @server.tool(annotations=edit)
+    async def office_ppt_add_connector(document: str, begin_x: float, begin_y: float, end_x: float, end_y: float,
+                                        slide: int = 1, color: str | None = None, weight: float | None = None,
+                                        arrow: bool = True, begin_arrow: bool = False) -> dict:
+        """Add a native straight connector between two points; coordinates are points.
+
+        Sets arrowheads on Shape.Line (the only valid location), so it never hits the
+        "EndArrowheadStyle cannot be set" error that raw batches do. color uses #RRGGBB.
+        """
+        return await worker.call("ppt_add_connector", document, begin_x, begin_y, end_x, end_y,
+                                 slide, color, weight, arrow, begin_arrow, True)
 
     return server
 

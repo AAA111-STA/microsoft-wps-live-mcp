@@ -14,7 +14,7 @@ If a document is already open, it seamlessly connects to the active desktop wind
 
 ## Features
 
-- **Standard stdio MCP**: Built on the official Python MCP SDK, providing 35 specialized tools with both modern and legacy protocol negotiation.
+- **Standard stdio MCP**: Built on the official Python MCP SDK, providing 37 specialized tools with both modern and legacy protocol negotiation.
 - **Visible, Step-by-Step Execution by Default**: Documents open in real desktop windows. The view actively tracks paragraphs, cell ranges, or slides as content takes shape in real time. Complex tasks run in named stages with progress reporting and automatic checkpoints.
 - **Zero-Takeover Native Editing**: The agent invokes standard MCP tools while you watch and continue editing in your familiar Office/WPS window. No screen capture, remote desktop takeover, or separate web preview portals required.
 - **Universal Object Model**: Inspect native type libraries, discover enums and constants, and batch compose get/set properties or invoke methods, returning reusable native object references.

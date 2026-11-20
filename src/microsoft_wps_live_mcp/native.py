@@ -620,11 +620,20 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         else:
             doc = app.Presentations.Add(visible)
         doc = self._wait_document_ready(doc)
+        if kind == "ppt" and int(doc.Slides.Count) == 0:
+            # Some PowerPoint builds return a new presentation with no slide,
+            # which makes Slides.Item(1) fail for every later tool.
+            doc.Slides.Add(1, 12)  # ppLayoutBlank
         record = self._remember(app, doc, vendor, kind, opened=True)
         record.live_enabled = visible
         if visible:
             self._ensure_live_window(record, foreground=True)
-        return self.save(record.id, str(path))
+        result = self.save(record.id, str(path))
+        if visible:
+            # Save As can take a moment; re-assert foreground so the window is not
+            # left behind other windows when the tool returns.
+            self._ensure_live_window(record, foreground=True)
+        return result
 
     def resolve(self, document, kind=None):
         if document in self.documents:
@@ -1144,6 +1153,67 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         backup = self._before_edit(r)
         self._font(obj.TextFrame.TextRange.Font, font_name, font_size, bold, italic, color, ppt=True)
         return self._result(r, {"slide": slide, "shape": shape}, save, backup)
+
+    def ppt_add_box(self, document, text, left, top, width, height, fill=None, font_size=None,
+                    font_color=None, rounded=True, slide=1, save=True):
+        """Add a native box with text and an explicit fill.
+
+        PowerPoint's default shape style gives white text, which is invisible on
+        a light fill. When fill is supplied and font_color is omitted, the font
+        color is chosen automatically for contrast, so users never get blank boxes.
+        """
+        r = self.resolve(document, "ppt")
+        if not all(math.isfinite(v) for v in (left, top, width, height)) or min(left, top) < 0 or min(width, height) <= 0:
+            raise OfficeError("Coordinates must be finite points, with nonnegative left/top and positive width/height.")
+        if font_size is not None and (not math.isfinite(font_size) or font_size <= 0):
+            raise OfficeError("font_size must be a positive number of points.")
+        page = self._slide(r, slide)
+        backup = self._before_edit(r)
+        shape = page.Shapes.AddShape(5 if rounded else 1, float(left), float(top), float(width), float(height))
+        if fill is not None:
+            fill_value = rgb(fill)
+            shape.Fill.Visible = -1
+            shape.Fill.ForeColor.RGB = fill_value
+            if font_color is None:
+                font_color = "#262626" if self._is_light(fill_value) else "#FFFFFF"
+        shape.TextFrame.TextRange.Text = text
+        shape.TextFrame.TextRange.Font.Size = float(font_size) if font_size is not None else 10.0
+        if font_color is not None:
+            shape.TextFrame.TextRange.Font.Color.RGB = rgb(font_color)
+        return self._result(r, {"slide": slide, "shape": int(page.Shapes.Count), "shape_id": int(shape.Id)},
+                             save, backup)
+
+    def ppt_add_connector(self, document, begin_x, begin_y, end_x, end_y, slide=1, color=None,
+                          weight=None, arrow=True, begin_arrow=False, save=True):
+        """Add a native straight connector.
+
+        Arrowheads live on Shape.Line (LineFormat), not on Shape itself; setting
+        Shape.EndArrowheadStyle fails. This convenience method sets them correctly.
+        """
+        r = self.resolve(document, "ppt")
+        if not all(math.isfinite(v) for v in (begin_x, begin_y, end_x, end_y)):
+            raise OfficeError("Connector coordinates must be finite points.")
+        if weight is not None and (not math.isfinite(weight) or weight <= 0):
+            raise OfficeError("weight must be a positive number of points.")
+        page = self._slide(r, slide)
+        backup = self._before_edit(r)
+        shape = page.Shapes.AddConnector(1, float(begin_x), float(begin_y), float(end_x), float(end_y))
+        line = shape.Line
+        if color is not None:
+            line.ForeColor.RGB = rgb(color)
+        if weight is not None:
+            line.Weight = float(weight)
+        line.EndArrowheadStyle = 2 if arrow else 1
+        line.BeginArrowheadStyle = 2 if begin_arrow else 1
+        return self._result(r, {"slide": slide, "shape": int(page.Shapes.Count), "shape_id": int(shape.Id)},
+                             save, backup)
+
+    @staticmethod
+    def _is_light(rgb_value):
+        red = rgb_value & 0xFF
+        green = (rgb_value >> 8) & 0xFF
+        blue = (rgb_value >> 16) & 0xFF
+        return (0.299 * red + 0.587 * green + 0.114 * blue) > 140
 
 
 @contextmanager
