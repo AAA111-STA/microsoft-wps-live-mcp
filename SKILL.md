@@ -1,6 +1,6 @@
 ---
 name: microsoft-wps-live
-description: 使用标准 MCP 在 Windows 的 Microsoft Office 或 WPS 中实时创建、读取和编辑 Word、Excel、PPT；支持原生组件、自动保存、恢复副本与最终副本，适用于工作、学习、科研及个人使用。
+description: Real-time creation, inspection, and live editing of Microsoft Office (Word, Excel, PowerPoint) and WPS Office documents via official stdio MCP on Windows and macOS. Supports visible step-by-step progress, auto-save with integrity verification, and recovery copies.
 ---
 
 # microsoft-wps-live mcp 智能体入口
