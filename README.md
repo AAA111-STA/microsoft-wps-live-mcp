@@ -70,7 +70,7 @@ Standard `pip` or `uv` installation is also supported. Once installed, start the
 
 ## Connecting to AI Agent Clients
 
-Configuration generators are provided for Codex, Claude Desktop / Claude Code, Google Gemini CLI / Antigravity, Kimi Code, ZCode, WorkBuddy, DeepSeek Harness, Trae, Qoder, and standard stdio MCP clients.
+Configuration generators are provided for Codex, Claude Desktop / Claude Code, Cursor, OpenCode, Google Gemini CLI / Antigravity, Kimi Code, ZCode, WorkBuddy, DeepSeek Harness, Trae, Qoder, and standard stdio MCP clients.
 
 ```powershell
 # Windows

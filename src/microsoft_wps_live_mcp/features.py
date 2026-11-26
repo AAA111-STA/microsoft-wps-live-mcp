@@ -5,6 +5,7 @@ import datetime as dt
 import difflib
 from pathlib import Path
 import re
+import sys
 
 
 def fail(message):
@@ -60,7 +61,15 @@ class SuiteFeatures:
         path = Path(filename).expanduser()
         if not path.is_absolute() or path.suffix.lower() != ".pdf" or not path.parent.is_dir() or path.exists():
             raise fail("Use an unused absolute .pdf output path in an existing directory.")
-        if r.kind == "word":
+        if sys.platform == "darwin":
+            from .macos import export_pdf_in_app, get_app_name
+            if not r.path:
+                raise fail("Save the macOS document to a local path before exporting PDF.")
+            if not bool(r.doc.Saved):
+                r.doc.Save()
+            if not export_pdf_in_app(get_app_name(r.engine, r.kind), Path(r.path), path.resolve()):
+                raise fail("The macOS application did not produce a PDF file.")
+        elif r.kind == "word":
             r.doc.ExportAsFixedFormat(str(path), 17)
         elif r.kind == "excel":
             r.doc.ExportAsFixedFormat(0, str(path))
@@ -76,6 +85,34 @@ class SuiteFeatures:
                 raise fail("The exported file did not have a valid PDF header.")
         return {**self._info(r), "exported": True, "output": str(path), "sha256": file_hash(path),
                 "size_bytes": path.stat().st_size, "source_disk_saved": False}
+
+    def ppt_export_image(self, document, filename, slide=1, width=1920, height=1080):
+        from .native import file_hash
+        r = self.resolve(document, "ppt")
+        path = Path(filename).expanduser()
+        ext = path.suffix.lower()
+        if not path.is_absolute() or ext not in (".png", ".jpg", ".jpeg") or not path.parent.is_dir() or path.exists():
+            raise fail("Use an unused absolute .png or .jpg output path in an existing directory.")
+        if not (160 <= int(width) <= 7680 and 90 <= int(height) <= 4320):
+            raise fail("width must be 160..7680 and height must be 90..4320.")
+        fmt = "PNG" if ext == ".png" else "JPG"
+        if sys.platform == "darwin":
+            from .macos import export_ppt_slide_image, get_app_name
+            self._slide(r, int(slide))
+            if not r.path:
+                raise fail("Save the presentation to a local path before exporting an image on macOS.")
+            if not bool(r.doc.Saved):
+                r.doc.Save()
+            if not export_ppt_slide_image(get_app_name(r.engine, "ppt"), Path(r.path), path.resolve(), slide=int(slide)):
+                raise fail("The macOS application did not produce an image file.")
+        else:
+            page = self._slide(r, int(slide))
+            page.Export(str(path.resolve()), fmt, int(width), int(height))
+        if not path.is_file() or path.stat().st_size == 0:
+            raise fail("The native application did not produce an image file.")
+        return {**self._info(r), "exported": True, "output": str(path), "slide": int(slide),
+                "format": fmt, "width": int(width), "height": int(height),
+                "sha256": file_hash(path), "size_bytes": path.stat().st_size}
 
     def word_find(self, document, text, match_case=False, whole_word=False, wildcards=False, limit=100):
         r = self.resolve(document, "word")

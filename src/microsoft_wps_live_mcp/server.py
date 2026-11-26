@@ -93,13 +93,14 @@ def build_server(worker=None):
     @server.tool(annotations=edit)
     async def office_create_document(path: str, engine: Literal["auto", "microsoft", "wps"] = "auto",
                                      visible: bool = True) -> dict:
-        """Create and save a new .docx/.xlsx/.pptx using native Office/WPS. Never overwrites an existing file."""
+        """Create and save a new .docx/.xlsx/.pptx using native Office/WPS, bringing the app window to the top when visible=True. Never overwrites an existing file."""
         return await worker.call("create", path, engine, visible)
 
     @server.tool(annotations=edit)
     async def office_show_document(document: str, focus: dict[str, Any] | None = None) -> dict:
-        """Show the real native editing window and navigate to the work in progress. No file content is changed.
+        """Show the real native Word/Excel/PPT window in the topmost foreground view and navigate to the work in progress. No file content is changed.
 
+        Always call after opening/creating (and before drawing/staged edits) so the target window sits cleanly on top.
         Word focus={start:0,end:20} (native character offsets);
         Excel focus={sheet:'Sheet1',address:'A1:D10'}; PPT focus={slide:2,shape:1} (shape optional).
         Can make a previously hidden native document visible without rebuilding it. Returns observed live_view status.
@@ -400,6 +401,69 @@ def build_server(worker=None):
         """
         return await worker.call("ppt_add_connector", document, begin_x, begin_y, end_x, end_y,
                                  slide, color, weight, arrow, begin_arrow, True)
+
+    @server.tool(annotations=edit)
+    async def office_ppt_draw_scene(document: str, stages: list[dict[str, Any]], ctx: Context,
+                                    coord_space: dict[str, Any] | None = None,
+                                    slide_size: list[float] | None = None,
+                                    pause_ms: int = 250, item_pause_ms: int = 20) -> dict:
+        """Draw complex PowerPoint diagrams/figures in live stages using high-precision native vector primitives.
+
+        Supports optional coord_space={width,height,origin_x?,origin_y?,margin?,fit?:'contain'|'stretch'} to map
+        pixel or logical coordinates automatically onto the slide, node 'id' + anchor/'on_line' references,
+        and primitives: box, shear_box, prism3d, grid3d, feature_stack, polygon, textbox, arrow,
+        curve_arrow (explicit c1/c2 or arc_height), aligned_chain (auto-collinear tilted blocks + segmented arrows),
+        junction (exact multi-branch meeting point), brace, and image (with crop_frac). Returns layout_warnings
+        for out-of-bounds or overlapping shapes/textboxes. Each item paints visibly and each stage saves automatically.
+        """
+        loop = asyncio.get_running_loop()
+        events = asyncio.Queue()
+        active = True
+        cancelled = threading.Event()
+
+        def on_progress(event):
+            if active and not loop.is_closed():
+                loop.call_soon_threadsafe(events.put_nowait, event)
+
+        running = asyncio.create_task(worker.call(
+            "ppt_draw_scene", document, stages, coord_space, slide_size, pause_ms, item_pause_ms,
+            _on_progress=on_progress, _cancel_event=cancelled,
+        ))
+        waiting = None
+        try:
+            while not running.done():
+                waiting = asyncio.create_task(events.get())
+                done, _ = await asyncio.wait({running, waiting}, return_when=asyncio.FIRST_COMPLETED)
+                if waiting in done:
+                    event = waiting.result()
+                    try:
+                        await ctx.report_progress(event["stage"], event["total"], event["label"])
+                    except Exception:
+                        pass
+                else:
+                    waiting.cancel()
+                    await asyncio.gather(waiting, return_exceptions=True)
+            while not events.empty():
+                event = events.get_nowait()
+                try:
+                    await ctx.report_progress(event["stage"], event["total"], event["label"])
+                except Exception:
+                    pass
+            return await running
+        finally:
+            active = False
+            if waiting is not None and not waiting.done():
+                waiting.cancel()
+                await asyncio.gather(waiting, return_exceptions=True)
+            if not running.done():
+                cancelled.set()
+                running.cancel()
+
+    @server.tool(annotations=edit)
+    async def office_ppt_export_image(document: str, path: str, slide: int = 1,
+                                      width: int = 1920, height: int = 1080) -> dict:
+        """Export a single live PowerPoint slide to an unused absolute .png or .jpg path for visual verification."""
+        return await worker.call("ppt_export_image", document, path, slide, width, height)
 
     return server
 

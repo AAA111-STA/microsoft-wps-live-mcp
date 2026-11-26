@@ -12,10 +12,10 @@ description: Real-time creation, inspection, and live editing of Microsoft Offic
 ## 执行流程
 
 1. `office_status` 确认本机接口与文档。原生后端要求 Windows 桌面及 Office/WPS，其他系统不能声称已实时连接。
-2. 按用户路径调用 `office_open_document` 或 `office_create_document`。选择 `microsoft` / `wps`，未指定则 `auto`；连接已打开原文档或载入未打开文件。
-   所有任务默认保持 `visible=true`，让用户看到真实编辑过程。只有用户明确要求后台操作时才使用 `visible=false`。
+2. 按用户路径调用 `office_open_document` 或 `office_create_document`（先打开 PPT / Word / Excel 对应文档），并紧接着调用 `office_show_document` 将原生窗口**置顶到最前视图**；只有完成前置打开与置顶后，才开始执行任何绘图标注或文档写入。选择 `microsoft` / `wps`，未指定则 `auto`；连接已打开原文档或载入未打开文件。
+   所有任务默认保持 `visible=true`，让用户在最上层视图实时看到整个编辑/画图过程。只有用户明确要求后台操作时才使用 `visible=false`。
 3. 先读内容与结构再改。`document` 可用 ID 或绝对路径；段落、工作表、幻灯片、形状为 1 起始，Word 字符偏移为原生 0 起始。
-4. 常用操作用快捷工具，其他需求用 `office_api_describe`、`office_api_constants`、`office_api_batch`。科研、办公、学习只是场景，不按示例限制功能。
+4. 常用操作用快捷工具，复杂 PowerPoint 科研架构图/流程图/1:1 复刻优先使用 `office_ppt_draw_scene`（支持 `coord_space` 自动坐标映射、`prism3d`/`grid3d`/`shear_box`/`curve_arrow` 与节点锚点绑定）并配合 `office_ppt_export_image` 视觉校验（详细设计规范见 [PPT 架构图技能](skills/ppt-architecture-diagram/SKILL.md)）；其他需求用 `office_api_describe`、`office_api_constants`、`office_api_batch`。科研、办公、学习只是场景，不按示例限制功能。
    所有复杂任务都拆成短小、有意义的可见阶段，优先使用 `office_live_steps`；普通工具也用多个小步骤组织工作，不一次重建整个文件。使用 `office_show_document` 定位编辑中的段落、区域、幻灯片。说明阶段进展，允许用户在过程中调整要求，不逐步索要确认。
 5. 修改后自动保存，检查 `disk_saved`、`autosave_state`；原生缓存不能当作落盘。恢复副本失败应单独报告。
 6. 结束编辑前调用 `office_create_copy`，报告原文件、独立副本、恢复副本位置，不覆盖已有副本。

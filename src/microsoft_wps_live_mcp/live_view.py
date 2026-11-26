@@ -22,6 +22,8 @@ class LiveView:
             pass
         # Native Office has its own UI thread. Yield time for it to paint while
         # this STA also pumps incoming COM messages; never suppress screen updates.
+        if not pause_ms or pause_ms <= 0:
+            return
         deadline = time.monotonic() + pause_ms / 1000
         while time.monotonic() < deadline:
             if getattr(self, "com", None) is not None:
@@ -33,14 +35,17 @@ class LiveView:
         if sys.platform != "win32":
             return None
         import win32gui
-        for name in ("Hwnd", "HWND"):
-            try:
-                value = getattr(window, name)
-                hwnd = int(value() if callable(value) else value)
-                if win32gui.IsWindow(hwnd):
-                    return win32gui.GetAncestor(hwnd, 2) or hwnd
-            except Exception:
-                pass
+        for target_obj in (window, getattr(record, "app", None)):
+            if target_obj is None:
+                continue
+            for name in ("Hwnd", "HWND"):
+                try:
+                    value = getattr(target_obj, name)
+                    hwnd = int(value() if callable(value) else value)
+                    if win32gui.IsWindow(hwnd):
+                        return win32gui.GetAncestor(hwnd, 2) or hwnd
+                except Exception:
+                    pass
         if record is not None and getattr(record, "kind", None) == "ppt":
             h = win32gui.FindWindow("PPTFrameClass", None)
             if h and win32gui.IsWindow(h):
@@ -89,7 +94,72 @@ class LiveView:
                             return foreground
                     except Exception:
                         pass
+        if record is not None and getattr(record, "engine", None) == "microsoft":
+            cls_map = {"ppt": "PPTFrameClass", "word": "OpusApp", "excel": "XLMAIN"}
+            cls_name = cls_map.get(getattr(record, "kind", None))
+            if cls_name:
+                h = win32gui.FindWindow(cls_name, None)
+                if h and win32gui.IsWindow(h):
+                    return h
         return None
+
+    @staticmethod
+    def _raise_to_top(hwnd):
+        """Reliably bring a native Office/WPS window to the topmost visible layer without key simulation."""
+        if not hwnd or sys.platform != "win32":
+            return
+        import ctypes
+        import win32con
+        import win32gui
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        if right - left < 800 or bottom - top < 500:
+            win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+        else:
+            win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+
+        attached = False
+        fg_tid = 0
+        cur_tid = kernel32.GetCurrentThreadId()
+        try:
+            fg = user32.GetForegroundWindow()
+            if fg and fg != hwnd:
+                fg_tid = user32.GetWindowThreadProcessId(fg, None)
+                if fg_tid and fg_tid != cur_tid:
+                    attached = bool(user32.AttachThreadInput(fg_tid, cur_tid, True))
+        except Exception:
+            attached = False
+        try:
+            try:
+                user32.SwitchToThisWindow(hwnd, True)
+            except Exception:
+                pass
+            try:
+                user32.BringWindowToTop(hwnd)
+            except Exception:
+                pass
+            try:
+                win32gui.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+            # Pulse HWND_TOPMOST -> HWND_NOTOPMOST so background stdio MCP calls raise
+            # the native Word/Excel/PPT frame cleanly onto the top Z-order layer
+            # without leaving Always-On-Top pinned afterwards.
+            flags = win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
+            try:
+                win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, flags)
+                win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+            except Exception:
+                pass
+        finally:
+            if attached and fg_tid:
+                try:
+                    user32.AttachThreadInput(fg_tid, cur_tid, False)
+                except Exception:
+                    pass
 
     def _ensure_live_window(self, record, foreground=False):
         if not record.live_enabled:
@@ -132,9 +202,12 @@ class LiveView:
                     pass
             visible = None
             if sys.platform == "darwin":
+                from .macos import activate_app, get_app_name
                 try:
                     if hasattr(app, "Activate"):
                         app.Activate()
+                    if foreground:
+                        activate_app(get_app_name(record.engine, record.kind))
                 except Exception:
                     pass
                 visible = True
@@ -148,19 +221,7 @@ class LiveView:
                     win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
                     visible = bool(win32gui.IsWindowVisible(hwnd))
                 if foreground:
-                    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-                    if right - left < 800 or bottom - top < 500:
-                        win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
-                    try:
-                        import ctypes
-                        ctypes.windll.user32.ShowWindow(hwnd, win32con.SW_SHOW)
-                        ctypes.windll.user32.SwitchToThisWindow(hwnd, True)
-                    except Exception:
-                        pass
-                    try:
-                        win32gui.SetForegroundWindow(hwnd)
-                    except Exception:
-                        pass  # Windows may refuse foreground focus; don't simulate keys.
+                    self._raise_to_top(hwnd)
             if foreground and record.kind == "ppt":
                 try:
                     window.View.ZoomToFit = True
@@ -211,6 +272,10 @@ class LiveView:
             slide = focus.get("slide")
             if slide is None:
                 return
+            ppt_cache = self.__dict__.setdefault("live_ppt_focus_cache", {})
+            if focus.get("shape") is None and ppt_cache.get(record.id) == slide and getattr(self, "live_active_document", None) == record.id:
+                record.live_state["focus"] = {"slide": slide}
+                return
             self._slide(record, slide)
             try:
                 if int(window.ViewType) not in (1, 9):
@@ -218,6 +283,7 @@ class LiveView:
             except Exception:
                 pass
             window.View.GotoSlide(slide)
+            ppt_cache[record.id] = slide
             record.live_state["focus"] = {"slide": slide}
             if focus.get("shape") is not None:
                 page = self._slide(record, slide)
@@ -235,10 +301,20 @@ class LiveView:
             hwnd = (record.live_state or {}).get("hwnd")
             if window is not None and hwnd and sys.platform == "win32":
                 import win32gui
-                if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
+                now = time.monotonic()
+                verified_at = self.__dict__.setdefault("live_hwnd_verified_at", {}).get(record.id, 0.0)
+                if not win32gui.IsWindow(hwnd):
                     window = None
+                elif now - verified_at >= 0.5:
+                    if not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
+                        window = None
+                    else:
+                        self.live_hwnd_verified_at[record.id] = now
             if window is None:
-                window = self._ensure_live_window(record)
+                first_open = not bool((record.live_state or {}).get("window_open"))
+                window = self._ensure_live_window(record, foreground=first_open)
+                if sys.platform == "win32":
+                    self.__dict__.setdefault("live_hwnd_verified_at", {})[record.id] = time.monotonic()
             record.live_state.pop("focus_error", None)
             record.live_state["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
             try:

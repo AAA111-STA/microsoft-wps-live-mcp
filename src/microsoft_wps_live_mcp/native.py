@@ -19,12 +19,14 @@ from types import SimpleNamespace
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from .discovery import (COLLECTIONS, EXTENSIONS, PROGIDS, canonical, capabilities,
-                        native_window_apps, registration, vendor_of)
+from .discovery import (COLLECTIONS, EXTENSIONS, MACOS_APPS, PROGIDS, canonical,
+                        capabilities, macos_app_installed, native_window_apps,
+                        registration, vendor_of)
 from .com_dispatch import dispatch, retry_busy
 from .object_model import ObjectModel
 from .features import SuiteFeatures
 from .live_view import LiveView
+from .ppt_diagram import PptDiagramMixin
 
 
 class OfficeError(ToolError, RuntimeError):
@@ -97,7 +99,7 @@ class Document:
     live_state: dict | None = None
 
 
-class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
+class NativeOffice(ObjectModel, SuiteFeatures, LiveView, PptDiagramMixin):
     def __init__(self, data_dir: str | Path | None = None):
         if sys.platform not in ("win32", "darwin"):
             raise OfficeError("Native editing requires Windows or macOS with Microsoft Office or WPS Office installed.")
@@ -128,6 +130,8 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
 
     @staticmethod
     def _app_key(app, vendor, kind):
+        if sys.platform == "darwin" or getattr(app, "macos", False):
+            return vendor, kind, getattr(app, "app_name", f"macos-{vendor}-{kind}")
         # Office can return different IDispatch/IUnknown proxies for the same app
         # through ROT, GetActiveObject and native-window accessibility.
         try:
@@ -159,6 +163,15 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         return vendor, kind, match[1] if match else raw
 
     def _apps(self, kind):
+        if sys.platform == "darwin":
+            from .macos import MacAppProxy, is_process_running
+            found = []
+            for vendor in ("microsoft", "wps"):
+                if macos_app_installed(vendor, kind):
+                    proxy = MacAppProxy(vendor, kind)
+                    if is_process_running(proxy.app_name):
+                        found.append((vendor, proxy))
+            return found
         found = [(vendor, app) for vendor, k, app in self.apps if k == kind]
         for vendor, kinds in PROGIDS.items():
             for progid in kinds[kind]:
@@ -249,7 +262,8 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         for record in self.documents.values():
             try:
                 same_app = self._app_key(app, vendor, kind) == self._app_key(record.app, record.engine, record.kind)
-                if same_app and ((path is not None and path == record.path) or record.doc._oleobj_ == doc._oleobj_):
+                if same_app and ((path is not None and path == record.path)
+                                 or getattr(record.doc, "_oleobj_", record.doc) == getattr(doc, "_oleobj_", doc)):
                     record.doc.Name  # do not reuse a closed native document reference
                     return record
             except Exception:
@@ -280,6 +294,8 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
 
     def list_open(self, engine="auto"):
         self.check_engine(engine)
+        if sys.platform == "darwin":
+            return self._list_open_macos(engine)
         result = []
         warnings = []
         seen = set()
@@ -313,6 +329,47 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
                         for identifier in set(self.documents) - prior_ids:
                             self.documents.pop(identifier, None)
                         warnings.append({"engine": vendor, "kind": kind, "index": index, "error": str(exc)})
+        return {"documents": result, "discovery_warnings": warnings,
+                "reachable_engines": sorted(f"{v}/{k}" for v, k in reachable)}
+
+    def _list_open_macos(self, engine="auto"):
+        from .macos import MacAppProxy, MacDocProxy, get_app_name, is_process_running, list_open_docs
+        result, warnings, seen, reachable = [], [], set(), set()
+        for kind in COLLECTIONS:
+            for vendor in ("microsoft", "wps"):
+                if engine != "auto" and vendor != engine:
+                    continue
+                if macos_app_installed(vendor, kind) and is_process_running(get_app_name(vendor, kind)):
+                    reachable.add((vendor, kind))
+        for item in list_open_docs():
+            if engine != "auto" and item["engine"] != engine:
+                continue
+            kind, vendor, full_name = item["kind"], item["engine"], item["full_name"]
+            target = canonical(full_name) if full_name and Path(full_name).is_absolute() else None
+            record = None
+            if target:
+                for existing in self.documents.values():
+                    if existing.path == target:
+                        record = existing
+                        break
+                if record is None and Path(full_name).is_file():
+                    try:
+                        app = MacAppProxy(vendor, kind)
+                        doc = MacDocProxy(full_name, kind, vendor)
+                        record = self._remember(app, doc, vendor, kind, opened=False)
+                    except Exception as exc:
+                        warnings.append({"engine": vendor, "kind": kind, "error": str(exc)})
+            if record is not None and record.id not in seen:
+                result.append(self._info(record))
+                seen.add(record.id)
+            elif record is None:
+                result.append({"document_id": None, "name": item["name"], "path": target,
+                               "kind": kind, "engine": vendor, "saved": True, "read_only": False,
+                               "opened_by_server": False, "automatic_save": False})
+        for record in self.documents.values():
+            if record.id not in seen and (engine == "auto" or record.engine == engine):
+                result.append(self._info(record))
+                seen.add(record.id)
         return {"documents": result, "discovery_warnings": warnings,
                 "reachable_engines": sorted(f"{v}/{k}" for v, k in reachable)}
 
@@ -369,6 +426,8 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         self.check_engine(engine)
         if kind is not None and kind not in COLLECTIONS:
             raise OfficeError("kind must be one of: " + ", ".join(COLLECTIONS))
+        if sys.platform == "darwin":
+            return self._probe_macos(engine, kind)
         engines = {}
         quit_warnings = []
         for vendor, kinds in PROGIDS.items():
@@ -393,6 +452,34 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
                      "only instances started by this probe are quit. Pre-existing apps are left untouched. "
                      "Launched apps are hidden (Visible=False); Office click-to-run may take a few seconds "
                      "to finalize process exit after Quit."),
+        }
+
+    def _probe_macos(self, engine="auto", kind=None):
+        from .macos import get_app_name, is_process_running
+        engines = {}
+        for vendor, kinds in MACOS_APPS.items():
+            if engine != "auto" and vendor != engine:
+                continue
+            engines[vendor] = {}
+            for k, targets in kinds.items():
+                if kind is not None and k != kind:
+                    continue
+                installed = macos_app_installed(vendor, k)
+                app_name = get_app_name(vendor, k)
+                running = is_process_running(app_name) if installed else False
+                conn = "verified_running" if running else ("registered_not_running" if installed else "unavailable")
+                engines[vendor][k] = {
+                    "registered": installed,
+                    "running": running,
+                    "app_name": app_name,
+                    "targets": list(targets),
+                    "connection": conn,
+                }
+        return {
+            "platform": sys.platform,
+            "engines": engines,
+            "probe_quit_warnings": [],
+            "note": "macOS uses AppleScript and OOXML document bridge; no COM registration required.",
         }
 
     def _probe_one(self, vendor, kind, progids):
@@ -500,6 +587,17 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
 
     def _choose_app(self, kind, engine):
         vendors = [engine] if engine != "auto" else ["microsoft", "wps"]
+        if sys.platform == "darwin":
+            from .macos import MacAppProxy
+            for vendor in vendors:
+                if macos_app_installed(vendor, kind):
+                    for actual, app_kind, app in self.apps:
+                        if actual == vendor and app_kind == kind:
+                            return app, vendor
+                    app = MacAppProxy(vendor, kind)
+                    self.apps.append((vendor, kind, app))
+                    return app, vendor
+            raise OfficeError(f"No usable {engine} {kind} application found on macOS. Install Microsoft Office or WPS Office.")
         errors = []
         for vendor in vendors:
             # Reuse applications activated by this server. External open files
@@ -549,6 +647,9 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
 
     @contextmanager
     def _excel_events(self, record):
+        if sys.platform == "darwin" or getattr(record.app, "macos", False):
+            yield
+            return
         previous = record.app.EnableEvents
         record.app.EnableEvents = False
         try:
@@ -561,6 +662,8 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         path = self._validate_path(filename)
         kind = EXTENSIONS[path.suffix.lower()]
         target = canonical(path)
+        if sys.platform == "darwin":
+            return self._open_macos(path, kind, target, engine, visible)
         matches = []
         for vendor, app in self._apps(kind):
             collection = getattr(app, COLLECTIONS[kind])
@@ -607,6 +710,8 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
         self.check_engine(engine)
         path = self._validate_path(filename, exists=False)
         kind = EXTENSIONS[path.suffix.lower()]
+        if sys.platform == "darwin":
+            return self._create_macos(path, kind, engine, visible)
         app, vendor = self._choose_app(kind, engine)
         if kind == "word":
             doc = app.Documents.Add()
@@ -633,6 +738,53 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView):
             # Save As can take a moment; re-assert foreground so the window is not
             # left behind other windows when the tool returns.
             self._ensure_live_window(record, foreground=True)
+        return result
+
+    def _open_macos(self, path: Path, kind: str, target: str, engine: str, visible: bool):
+        from .macos import MacDocProxy, activate_app, list_open_docs, open_in_app
+        for record in self.documents.values():
+            if record.path == target:
+                if engine != "auto" and record.engine != engine:
+                    raise OfficeError(f"File is already open in {record.engine}. Use that engine or close it first.")
+                record.managed = True
+                record.live_enabled = visible
+                if visible:
+                    self._ensure_live_window(record, foreground=True)
+                return {**self._info(record), "already_open": True}
+        already_open = False
+        matched_vendor = engine
+        for item in list_open_docs(kind):
+            full = item.get("full_name") or ""
+            if (full and canonical(full) == target) or item.get("name") == path.name:
+                already_open = True
+                if engine != "auto" and item["engine"] != engine:
+                    raise OfficeError(f"File is already open in {item['engine']}. Use that engine or close it first.")
+                matched_vendor = item["engine"]
+                break
+        app, vendor = self._choose_app(kind, matched_vendor)
+        if not already_open:
+            open_in_app(app.app_name, path, visible=visible)
+        elif visible:
+            activate_app(app.app_name)
+        doc = MacDocProxy(path, kind, vendor)
+        record = self._remember(app, doc, vendor, kind, opened=True)
+        record.live_enabled = visible
+        if visible:
+            self._ensure_live_window(record, foreground=True)
+        return {**self._info(record), "already_open": already_open}
+
+    def _create_macos(self, path: Path, kind: str, engine: str, visible: bool):
+        from .macos import MacDocProxy, create_blank_ooxml, open_in_app
+        app, vendor = self._choose_app(kind, engine)
+        create_blank_ooxml(path, kind)
+        doc = MacDocProxy(path, kind, vendor)
+        record = self._remember(app, doc, vendor, kind, opened=True)
+        record.live_enabled = visible
+        result = self.save(record.id)
+        if visible:
+            open_in_app(app.app_name, path, visible=True)
+            self._ensure_live_window(record, foreground=True)
+            result.update(self._info(record))
         return result
 
     def resolve(self, document, kind=None):

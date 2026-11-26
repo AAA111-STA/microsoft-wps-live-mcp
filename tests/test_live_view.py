@@ -142,6 +142,31 @@ class LiveViewTests(unittest.TestCase):
                 self.assertIn('Inspect before retrying', result.content[0].text)
         asyncio.run(check())
 
+    def test_first_checkpoint_and_foreground_raise_to_top_across_apps(self):
+        from unittest.mock import patch
+
+        class DummyView(LiveView):
+            pass
+
+        view = DummyView()
+        raised = []
+        view._raise_to_top = lambda hwnd: raised.append(hwnd)
+        view._paint = lambda record, pause_ms=0: None
+        view._focus_live = lambda record, window, focus: None
+
+        for kind, fake_hwnd in (("word", 101), ("excel", 202), ("ppt", 303)):
+            win = SimpleNamespace(Visible=True, Activate=lambda: None, View=SimpleNamespace(ZoomToFit=False))
+            app = SimpleNamespace(Visible=True, ScreenUpdating=True)
+            doc = SimpleNamespace(FullName=f"f:/doc.{kind}", Windows=SimpleNamespace(Count=1, Item=lambda i, w=win: w))
+            record = SimpleNamespace(id=f"r_{kind}", kind=kind, engine="microsoft", app=app, doc=doc,
+                                     live_enabled=True, live_pause_ms=0, live_state={})
+            view._window_handle = lambda w, rec=None, h=fake_hwnd: h
+            with patch("win32gui.IsIconic", return_value=False), \
+                 patch("win32gui.IsWindowVisible", return_value=True), \
+                 patch("win32gui.IsWindow", return_value=True):
+                view.live_checkpoint(record, label="Initial edit")
+        self.assertEqual(raised, [101, 202, 303])
+
 
 if __name__ == "__main__":
     unittest.main()

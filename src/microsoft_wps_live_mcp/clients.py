@@ -2,8 +2,8 @@
 import json
 import sys
 
-PROFILES = ("codex", "claude", "claude-code", "gemini", "antigravity", "kimi", "zcode",
-            "workbuddy", "deepseek-harness", "trae", "qoder", "json")
+PROFILES = ("codex", "claude", "claude-code", "cursor", "gemini", "antigravity",
+            "opencode", "kimi", "zcode", "workbuddy", "deepseek-harness", "trae", "qoder", "json")
 
 
 def client_config(client):
@@ -16,6 +16,18 @@ def client_config(client):
         return "[mcp_servers.microsoft-wps-live]\ncommand = " + json.dumps(command) + "\nargs = " + json.dumps(args) + \
                "\nstartup_timeout_sec = 30\ntool_timeout_sec = 120\n\n" + \
                "[mcp_servers.microsoft-wps-live.env]\nPYTHONUTF8 = \"1\"\nPYTHONIOENCODING = \"utf-8\"\n"
+    if client == "opencode":
+        return json.dumps({
+            "mcp": {
+                "microsoft-wps-live": {
+                    "type": "local",
+                    "command": [command, *args],
+                    "environment": env,
+                    "enabled": True,
+                    "timeout": 120000,
+                }
+            }
+        }, indent=2)
     if client == "deepseek-harness":
         # Harness uses Cordis plugin entries rather than a mcpServers JSON map.
         return "- id: microsoft-wps-live\n  name: '@deepseek-ai/dsh-mcp-client'\n  config:\n" + \

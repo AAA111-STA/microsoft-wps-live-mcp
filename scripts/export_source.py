@@ -6,6 +6,8 @@ ROOT = Path(__file__).resolve().parent.parent
 ROOT_FILES = ('SKILL.md', 'README.md', 'README_CN.md', 'pyproject.toml', '.gitignore', '.gitattributes')
 SOURCE_DIRS = {'scripts': {'.py', '.ps1', '.sh'}, 'assets': {'.html', '.js', '.css', '.png', '.jpg', '.svg'},
                'tests': {'.py'}, 'docs': {'.md', '.json'}, 'examples': {'.json', '.md'},
+               'skills/ppt-architecture-diagram': {'.md'},
+               'skills/ppt-architecture-diagram/references': {'.md'},
                'src/microsoft_wps_live_mcp': {'.py'}, '.github/workflows': {'.yml'}}
 
 

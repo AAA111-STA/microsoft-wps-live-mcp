@@ -33,6 +33,8 @@ microsoft-wps-live mcp 使用标准 stdio MCP 协议，与模型厂商无关。�
 | Claude Code | `claude-code` / `claude-code.json` | 项目 `.mcp.json` 或客户端 MCP 配置，参见 [官方接入文档](https://code.claude.com/docs/en/mcp) |
 | Google Gemini CLI | `gemini` / `gemini.json` | 合并到 `settings.json` 的 `mcpServers`，参见 [官方文档](https://geminicli.com/docs/tools/mcp-server/) |
 | Google Antigravity | `antigravity` / `antigravity.json` | 从客户端打开 `mcp_config.json`，合并配置；参见 [官方文档](https://antigravity.google/docs/ide-mcp) |
+| Cursor | `cursor` / `cursor.json` | 合并到 `~/.cursor/mcp.json`（或项目 `.cursor/mcp.json`）的 `mcpServers` |
+| OpenCode | `opencode` / `opencode.json` | 合并到 `~/.config/opencode/opencode.json` 的 `mcp`（使用 `type: "local"` 与数组 `command`） |
 | Kimi Code | `kimi` / `kimi.json` | 导入或合并其 MCP 配置；参见 [官方文档](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/mcp) |
 | ZCode | `zcode` / `zcode.json` | 设置 → MCP Servers → 新建 → 完整 JSON 配置；参见 [官方文档](https://zcode.z.ai/en/docs/mcp-services) |
 | WorkBuddy | `workbuddy` / `workbuddy.json` | 添加自定义本地 stdio 服务，配置包含 120 秒超时；参见 [官方连接器文档](https://open.workbuddy.cn/docs/connector) |

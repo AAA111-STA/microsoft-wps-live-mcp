@@ -44,6 +44,10 @@ class ProtocolTests(unittest.TestCase):
             elif profile == "deepseek-harness":
                 self.assertIn("@deepseek-ai/dsh-mcp-client", text)
                 self.assertIn("transport: stdio", text)
+            elif profile == "opencode":
+                entry = json.loads(text)["mcp"]["microsoft-wps-live"]
+                self.assertEqual(entry["type"], "local")
+                self.assertEqual(entry["command"][0], sys.executable)
             else:
                 self.assertEqual(json.loads(text)["mcpServers"]["microsoft-wps-live"]["command"], sys.executable)
         with tempfile.TemporaryDirectory() as directory:

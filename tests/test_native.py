@@ -223,6 +223,53 @@ class NativeTests(unittest.TestCase):
                 self.assertIsNone(native.com)
                 self.assertEqual(native.documents, {})
 
+    def test_macos_lifecycle_create_open_list_and_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            docx = root / "report.docx"
+            xlsx = root / "sheet.xlsx"
+            with patch("sys.platform", "darwin"), \
+                 patch("microsoft_wps_live_mcp.native.macos_app_installed", side_effect=lambda v, k: v == "microsoft"), \
+                 patch("microsoft_wps_live_mcp.macos.open_in_app", return_value=True) as mock_open, \
+                 patch("microsoft_wps_live_mcp.macos.activate_app", return_value=True) as mock_act, \
+                 patch("microsoft_wps_live_mcp.macos.save_in_app", return_value=True), \
+                 patch("microsoft_wps_live_mcp.macos.is_process_running", return_value=True), \
+                 patch("microsoft_wps_live_mcp.macos.list_open_docs", return_value=[]):
+                native = NativeOffice(data_dir=root / "data")
+                created = native.create(str(docx), visible=True)
+                self.assertTrue(created["disk_saved"])
+                self.assertEqual(created["kind"], "word")
+                self.assertEqual(created["live_view"]["state"], "ready")
+                mock_open.assert_called()
+                mock_act.assert_called()
+
+                created_xl = native.create(str(xlsx), visible=True)
+                self.assertTrue(created_xl["disk_saved"])
+                self.assertEqual(created_xl["kind"], "excel")
+
+                opened = native.open(str(docx), visible=True)
+                self.assertTrue(opened["already_open"])
+
+                listing = native.list_open()
+                self.assertEqual(len(listing["documents"]), 2)
+                self.assertIn("microsoft/ppt", listing["reachable_engines"])
+
+                probed = native.probe()
+                self.assertEqual(probed["engines"]["microsoft"]["ppt"]["connection"], "verified_running")
+                self.assertEqual(probed["engines"]["wps"]["ppt"]["connection"], "unavailable")
+
+    def test_macos_blank_pptx_has_complete_presentation_structure(self):
+        from microsoft_wps_live_mcp.macos import create_blank_ooxml
+        with tempfile.TemporaryDirectory() as folder:
+            pptx = Path(folder) / "deck.pptx"
+            create_blank_ooxml(pptx, "ppt")
+            with zipfile.ZipFile(pptx) as z:
+                names = set(z.namelist())
+                for req in ("ppt/presentation.xml", "ppt/slides/slide1.xml",
+                            "ppt/slideLayouts/slideLayout1.xml", "ppt/slideMasters/slideMaster1.xml",
+                            "ppt/theme/theme1.xml", "ppt/_rels/presentation.xml.rels"):
+                    self.assertIn(req, names)
+
 
 if __name__ == "__main__":
     unittest.main()

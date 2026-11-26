@@ -45,6 +45,13 @@ def validate_steps(steps):
     return any(s["action"] == "set" or (s["action"] == "call" and not s.get("read_only", False)) for s in steps)
 
 
+_SHAPE_CREATE_MEMBERS = frozenset({
+    "addshape", "addtextbox", "addconnector", "addpicture", "addtable",
+    "addslide", "converttoshape", "duplicate", "group", "ungroup", "delete",
+})
+_FREEFORM_BUILD_MEMBERS = frozenset({"buildfreeform", "addnodes"})
+
+
 class ObjectModel:
     def _api_objects(self):
         return self.__dict__.setdefault("object_references", {})
@@ -176,6 +183,11 @@ class ObjectModel:
         return {"engine": record.engine, "kind": record.kind, "constants": result[:limit],
                 "total_matching_constants": len(result), "truncated": len(result) > limit}
 
+    def _flush_live_step(self, record, focus, step_pause_ms):
+        view = self.live_checkpoint(record, focus, pause_ms=step_pause_ms)
+        if view.get("state") == "unavailable":
+            raise error("Live display became unavailable; the batch stopped after this native step.")
+
     def api_batch(self, document, steps, save=True, _aliases=None, _step_pause_ms=None):
         from .native import file_hash
         from pathlib import Path
@@ -184,8 +196,15 @@ class ObjectModel:
         aliases = {} if _aliases is None else _aliases
         backup = self._before_edit(record) if mutating else None
         results = []
+        pending_shape = False
+        pending_focus = None
         for index, step in enumerate(steps, 1):
             try:
+                member_lower = step["member"].casefold()
+                if record.live_enabled and pending_shape and member_lower in _SHAPE_CREATE_MEMBERS:
+                    self._flush_live_step(record, pending_focus, _step_pause_ms)
+                    pending_shape = False
+                    pending_focus = None
                 target = self._api_target(record, step.get("target", "document"), aliases)
                 name = step["member"]
                 if step["action"] == "get":
@@ -205,12 +224,21 @@ class ObjectModel:
                 results.append({"step": index, "result": self._api_export(record, value)})
                 if record.live_enabled and (step["action"] == "set" or
                         (step["action"] == "call" and not step.get("read_only", False))):
-                    focus = self._focus_for_object(record, value) if hasattr(value, "_oleobj_") else None
-                    if focus is None:
-                        focus = self._focus_for_object(record, target)
-                    view = self.live_checkpoint(record, focus, pause_ms=_step_pause_ms)
-                    if view.get("state") == "unavailable":
-                        raise error("Live display became unavailable; the batch stopped after this native step.")
+                    if member_lower in _FREEFORM_BUILD_MEMBERS:
+                        continue
+                    if member_lower in _SHAPE_CREATE_MEMBERS:
+                        pending_shape = True
+                        pending_focus = self._focus_for_object(record, value) if hasattr(value, "_oleobj_") else None
+                        if pending_focus is None:
+                            pending_focus = self._focus_for_object(record, target)
+                    elif pending_shape:
+                        if pending_focus is None:
+                            pending_focus = self._focus_for_object(record, target)
+                    else:
+                        focus = self._focus_for_object(record, value) if hasattr(value, "_oleobj_") else None
+                        if focus is None:
+                            focus = self._focus_for_object(record, target)
+                        self._flush_live_step(record, focus, _step_pause_ms)
             except Exception as exc:
                 record.autosave_paused = True
                 record.autosave_state = {"state": "needs_inspection", "message": "A batch partially failed. Inspect, then explicitly save to resume automatic saving."}
@@ -219,6 +247,8 @@ class ObjectModel:
                         "disk_saved": False, "backup": backup, "inspect_before_retry": True,
                         "message": "Earlier steps may have changed the live document. The batch is not transactional. "
                                    "Inspect before retrying. No automatic replay or rollback was attempted."}
+        if record.live_enabled and pending_shape:
+            self._flush_live_step(record, pending_focus, _step_pause_ms)
         if mutating:
             output = self._result(record, {"completed_steps": len(results)}, save, backup)
         else:
