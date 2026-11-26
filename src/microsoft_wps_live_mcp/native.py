@@ -1044,9 +1044,7 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView, PptDiagramMixin):
             start = cursor
             cursor += len(chunk.encode("utf-16-le")) // 2
             if r.live_enabled and len(chunks) > 1:
-                self.live_checkpoint(r, {"start": start, "end": cursor}, label=f"Text {index}/{len(chunks)}")
-                if save:
-                    self.save(r.id)
+                self.live_checkpoint(r, {"start": start, "end": cursor}, pause_ms=140, label=f"Text {index}/{len(chunks)}")
         return self._result(r, {"inserted_characters": len(text), "position": offset,
                                 "last_position": cursor, "visible_steps": len(chunks),
                                 "live_focus": {"start": start, "end": cursor}}, save, backup)
@@ -1065,18 +1063,25 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView, PptDiagramMixin):
                                     ReplaceWith=replacement, Replace=2 if replace_all else 1))
         return self._result(r, {"matched": found, "replace_all": replace_all}, save, backup)
 
-    def word_format(self, document, start, end, font_name=None, font_size=None, bold=None, italic=None, color=None, save=True):
+    def word_format(self, document, start, end, font_name=None, font_size=None, bold=None,
+                    italic=None, color=None, ascii_font_name=None, save=True):
         r = self.resolve(document, "word")
         if not (0 <= start < end <= int(r.doc.Content.End)):
             raise OfficeError("start/end must be valid native Word character offsets; read paragraphs first.")
         self._validate_font(font_size, color)
         backup = self._before_edit(r)
-        self._font(r.doc.Range(start, end).Font, font_name, font_size, bold, italic, color)
+        self._font(r.doc.Range(start, end).Font, font_name, font_size, bold, italic, color,
+                   ascii_name=ascii_font_name)
         return self._result(r, {"formatted_start": start, "formatted_end": end}, save, backup)
 
-    def word_add_table(self, document, values, position="end", save=True):
+    def word_add_table(self, document, values, position="end", style="default",
+                       font_name=None, ascii_font_name=None, font_size=None,
+                       header_fill=None, save=True):
         r = self.resolve(document, "word")
         self._matrix(values)
+        if style not in ("default", "grid", "three_line"):
+            raise OfficeError("style must be default, grid, or three_line.")
+        self._validate_font(font_size, header_fill)
         if len(values) * len(values[0]) > 2000:
             raise OfficeError("At most 2000 table cells per request.")
         end = max(0, int(r.doc.Content.End) - 1)
@@ -1092,10 +1097,57 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView, PptDiagramMixin):
             if r.live_enabled and (row % group == 0 or row == len(values)):
                 cell_range = table.Cell(row, 1).Range
                 self.live_checkpoint(r, {"start": int(cell_range.Start), "end": int(cell_range.End)},
-                                     label=f"Table row {row}/{len(values)}")
-                if save:
-                    self.save(r.id)
-        return self._result(r, {"table_index": int(r.doc.Tables.Count), "rows": len(values), "columns": len(values[0])}, save, backup)
+                                     pause_ms=120, label=f"Table row {row}/{len(values)}")
+        if style != "default" or any(x is not None for x in (font_name, ascii_font_name, font_size, header_fill)):
+            self._style_word_table(table, style, font_name, ascii_font_name, font_size, header_fill)
+            if r.live_enabled:
+                self.live_checkpoint(r, {"start": int(table.Range.Start), "end": int(table.Range.End)},
+                                     pause_ms=160, label=f"Styled {style} table")
+        return self._result(r, {"table_index": int(r.doc.Tables.Count), "rows": len(values),
+                                "columns": len(values[0]), "style": style}, save, backup)
+
+    @classmethod
+    def _style_word_table(cls, table, style, font_name, ascii_font_name, font_size, header_fill):
+        try:
+            table.Rows.Alignment = 1  # wdAlignRowCenter
+        except Exception:
+            pass
+        try:
+            table.Range.ParagraphFormat.Alignment = 1  # wdAlignParagraphCenter
+        except Exception:
+            pass
+        for attr, val in (("TopPadding", 4.5), ("BottomPadding", 4.5), ("LeftPadding", 6.0), ("RightPadding", 6.0)):
+            try:
+                setattr(table, attr, val)
+            except Exception:
+                pass
+        cls._font(table.Range.Font, font_name, font_size, None, None, None, ascii_name=ascii_font_name)
+        if style == "three_line":
+            table.Borders.Enable = 0
+            # wdBorderTop=-1 (1.5pt=12), wdBorderBottom=-3 (1.5pt=12), header bottom=0.75pt (6)
+            for border_id, width in ((-1, 12), (-3, 12)):
+                b = table.Borders.Item(border_id)
+                b.LineStyle = 1
+                b.LineWidth = width
+            hdr = table.Rows.Item(1)
+            hb = hdr.Borders.Item(-3)
+            hb.LineStyle = 1
+            hb.LineWidth = 6
+            hdr.Range.Font.Bold = -1
+            if header_fill:
+                fill_val = rgb(header_fill)
+                hdr.Shading.BackgroundPatternColor = fill_val
+                if not cls._is_light(fill_val):
+                    hdr.Range.Font.Color = 0xFFFFFF
+        elif style == "grid":
+            table.Borders.Enable = 1
+            hdr = table.Rows.Item(1)
+            hdr.Range.Font.Bold = -1
+            fill_hex = header_fill or "#1F4E79"
+            fill_val = rgb(fill_hex)
+            hdr.Shading.BackgroundPatternColor = fill_val
+            if not cls._is_light(fill_val):
+                hdr.Range.Font.Color = 0xFFFFFF
 
     @staticmethod
     def _matrix(values):
@@ -1153,9 +1205,7 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView, PptDiagramMixin):
                     last_address = f"{left}{first_row + offset}:{right}{first_row + offset + count - 1}"
                     self._sheet(r, sheet).Range(last_address).Value2 = data[offset:offset + count]
                     self.live_checkpoint(r, {"sheet": str(cell.Worksheet.Name), "address": last_address},
-                                         label=f"Data rows {offset + 1}-{offset + count}/{rows}")
-                    if save:
-                        self.save(r.id)
+                                         pause_ms=120, label=f"Data rows {offset + 1}-{offset + count}/{rows}")
             else:
                 cell.Value2 = data
         return self._result(r, {"sheet": str(cell.Worksheet.Name), "range": address,
@@ -1191,9 +1241,20 @@ class NativeOffice(ObjectModel, SuiteFeatures, LiveView, PptDiagramMixin):
             rgb(color)
 
     @staticmethod
-    def _font(font, name, size, bold, italic, color, ppt=False):
+    def _font(font, name, size, bold, italic, color, ppt=False, ascii_name=None):
         if name is not None:
             font.Name = name
+            if ascii_name is not None and not ppt:
+                try:
+                    font.NameFarEast = name
+                except Exception:
+                    pass
+        if ascii_name is not None and not ppt:
+            for attr in ("NameAscii", "NameOther"):
+                try:
+                    setattr(font, attr, ascii_name)
+                except Exception:
+                    pass
         if size is not None:
             font.Size = size
         if bold is not None:

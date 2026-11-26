@@ -393,7 +393,7 @@ class PptDiagramMixin:
     def ppt_draw_scene(self, document: str, stages: list[dict[str, Any]],
                        coord_space: dict[str, Any] | None = None,
                        slide_size: list[float] | None = None,
-                       pause_ms: int = 250, item_pause_ms: int = 20,
+                       pause_ms: int = 320, item_pause_ms: int = 32,
                        _on_progress=None, _cancel_event=None):
         if not isinstance(stages, list) or not 1 <= len(stages) <= 60:
             raise _fail("stages must contain 1 to 60 named drawing stages.")

@@ -310,15 +310,29 @@ def build_server(worker=None):
     @server.tool(annotations=edit)
     async def office_word_format_text(document: str, start: int, end: int, font_name: str | None = None,
                                       font_size: float | None = None, bold: bool | None = None,
-                                      italic: bool | None = None, color: str | None = None) -> dict:
-        """Format a native Word character range; get start/end offsets from office_word_read. Colors use #RRGGBB."""
-        return await worker.call("word_format", document, start, end, font_name, font_size, bold, italic, color, True)
+                                      italic: bool | None = None, color: str | None = None,
+                                      ascii_font_name: str | None = None) -> dict:
+        """Format a native Word character range; get start/end offsets from office_word_read. Colors use #RRGGBB.
+
+        Set ascii_font_name (e.g. 'Times New Roman') together with font_name (e.g. '微软雅黑' or '宋体')
+        so English letters, digits, and ASCII symbols use Times New Roman while Chinese keeps font_name.
+        """
+        return await worker.call("word_format", document, start, end, font_name, font_size, bold,
+                                 italic, color, ascii_font_name, True)
 
     @server.tool(annotations=edit)
     async def office_word_add_table(document: str, values: list[list[str | int | float | bool | None]],
-                                    position: str | int = "end") -> dict:
-        """Insert a rectangular native Word table at end or a character offset. Does not rebuild other document content."""
-        return await worker.call("word_add_table", document, values, position, True)
+                                    position: str | int = "end",
+                                    style: Literal["default", "grid", "three_line"] = "default",
+                                    font_name: str | None = None, ascii_font_name: str | None = None,
+                                    font_size: float | None = None, header_fill: str | None = None) -> dict:
+        """Insert a rectangular native Word table at end or a character offset.
+
+        Use style='three_line' for clean academic/executive three-line tables (1.5pt top/bottom rules,
+        0.75pt header divider, no vertical lines) and ascii_font_name='Times New Roman' for numbers/English.
+        """
+        return await worker.call("word_add_table", document, values, position, style,
+                                 font_name, ascii_font_name, font_size, header_fill, True)
 
     @server.tool(annotations=read)
     async def office_excel_read_range(document: str, sheet: str | int, address: str) -> dict:
@@ -406,7 +420,7 @@ def build_server(worker=None):
     async def office_ppt_draw_scene(document: str, stages: list[dict[str, Any]], ctx: Context,
                                     coord_space: dict[str, Any] | None = None,
                                     slide_size: list[float] | None = None,
-                                    pause_ms: int = 250, item_pause_ms: int = 20) -> dict:
+                                    pause_ms: int = 320, item_pause_ms: int = 32) -> dict:
         """Draw complex PowerPoint diagrams/figures in live stages using high-precision native vector primitives.
 
         Supports optional coord_space={width,height,origin_x?,origin_y?,margin?,fit?:'contain'|'stretch'} to map

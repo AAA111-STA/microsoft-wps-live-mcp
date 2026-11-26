@@ -270,6 +270,75 @@ class NativeTests(unittest.TestCase):
                             "ppt/theme/theme1.xml", "ppt/_rels/presentation.xml.rels"):
                     self.assertIn(req, names)
 
+    def test_word_mixed_font_and_three_line_table_without_midloop_save_stutter(self):
+        native = NativeOffice.__new__(NativeOffice)
+        native.documents = {}
+        borders = {
+            -1: SimpleNamespace(LineStyle=0, LineWidth=0),
+            -3: SimpleNamespace(LineStyle=0, LineWidth=0),
+        }
+        hdr_bottom = SimpleNamespace(LineStyle=0, LineWidth=0)
+        hdr_row = SimpleNamespace(
+            Borders=SimpleNamespace(Item=lambda idx: hdr_bottom),
+            Range=SimpleNamespace(Font=SimpleNamespace(Bold=0, Color=0)),
+            Shading=SimpleNamespace(BackgroundPatternColor=0),
+        )
+        cells = {}
+
+        def get_cell(r, c):
+            if (r, c) not in cells:
+                cells[(r, c)] = SimpleNamespace(Range=SimpleNamespace(Text="", Start=(r - 1) * 10 + c, End=(r - 1) * 10 + c + 5))
+            return cells[(r, c)]
+
+        tbl = SimpleNamespace(
+            Cell=get_cell,
+            Borders=SimpleNamespace(Enable=1, Item=lambda idx: borders[idx]),
+            Rows=SimpleNamespace(Alignment=0, Item=lambda idx: hdr_row),
+            Range=SimpleNamespace(
+                Start=10, End=90,
+                ParagraphFormat=SimpleNamespace(Alignment=0),
+                Font=SimpleNamespace(Name="", NameFarEast="", NameAscii="", NameOther="", Size=10),
+            ),
+        )
+        doc_font = SimpleNamespace(Name="", NameFarEast="", NameAscii="", NameOther="", Size=11, Bold=0, Italic=0, Color=0)
+        doc = SimpleNamespace(
+            Name="report.docx", FullName="F:/report.docx", Saved=True, ReadOnly=False,
+            Content=SimpleNamespace(End=100),
+            Range=lambda s, e: SimpleNamespace(Font=doc_font),
+            Tables=SimpleNamespace(Count=1, Add=lambda rng, r, c: tbl),
+        )
+        record = Document("d1", MagicMock(), doc, "microsoft", "word", None, None, managed=True, live_enabled=True)
+        native.resolve = lambda d, k=None: record
+        native._before_edit = lambda r: None
+        native.live_checkpoint = MagicMock(return_value={"state": "ready"})
+        native.save = MagicMock(return_value={"disk_saved": True})
+        native._result = lambda r, op, save, backup: {**op, "disk_saved": True}
+
+        native.word_format("d1", 0, 20, font_name="微软雅黑", ascii_font_name="Times New Roman", font_size=12, bold=True)
+        self.assertEqual(doc_font.NameFarEast, "微软雅黑")
+        self.assertEqual(doc_font.NameAscii, "Times New Roman")
+        self.assertEqual(doc_font.NameOther, "Times New Roman")
+
+        res = native.word_add_table(
+            "d1",
+            [["指标", "均值"], ["准确率", "98.6%"], ["耗时", "1.4s"]],
+            style="three_line",
+            font_name="微软雅黑",
+            ascii_font_name="Times New Roman",
+            font_size=10.5,
+            header_fill="#F2F6FA",
+        )
+        self.assertEqual(res["style"], "three_line")
+        self.assertEqual(tbl.Borders.Enable, 0)
+        self.assertEqual(borders[-1].LineWidth, 12)
+        self.assertEqual(borders[-3].LineWidth, 12)
+        self.assertEqual(hdr_bottom.LineWidth, 6)
+        self.assertEqual(hdr_row.Range.Font.Bold, -1)
+        self.assertEqual(tbl.Range.Font.NameAscii, "Times New Roman")
+        self.assertEqual(tbl.Range.Font.NameFarEast, "微软雅黑")
+        # Mid-loop save() must NOT be called per row during live animation.
+        native.save.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
